@@ -1,6 +1,7 @@
+#![allow(warnings)]
 use anyhow;
 use std::env;
-use std::io::{Write, BufRead, BufReader};
+use std::io::{Write, SeekFrom, Seek, BufRead, BufReader};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::fs::{File, OpenOptions, create_dir_all};
@@ -9,6 +10,7 @@ use std::hash::{Hash, Hasher};
 use serde::{Serialize, Deserialize};
 
 pub type Result<T> = anyhow::Result<T>;
+pub type LogIndex = HashMap<String, (u64, usize)>;
 
 /// KvStore stores string key/value pairs.
 ///
@@ -24,9 +26,10 @@ pub type Result<T> = anyhow::Result<T>;
 /// assert_eq!(val, Some("value".to_owned()));
 /// ```
 pub struct KvStore {
-    pub log_index: HashMap<u64, u64>,
-    pub log_file: Result<File>,
-    pub index_file: Result<File>,
+    pub log_index: LogIndex,
+    pub path: PathBuf,
+    pub log_file: File,
+    pub index_file: File,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
@@ -56,16 +59,11 @@ impl KvStore {
     /// It overwrites the value if key is already in the store.
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
         let log = Log::new("set".to_string(), vec![key.to_owned(), value.to_owned()]);
-        // log file
-        // index file
-        let mut store = KvStore::new()?;
-        store.log_index.insert(KvStore::calculate_hash(&log), 0);
+        let log_bytes = &serde_json::to_vec(&log)?;
 
-        println!("{:?}", store.log_index);
+        self.log_index.insert(key, (self.log_file.metadata()?.len(), log_bytes.len()));
 
-        let mut log_file = store.log_file?;
-
-        log_file.write_all(&serde_json::to_vec(&log)?)?;
+        self.log_file.write_all(log_bytes)?;
 
         Ok(())
     }
@@ -79,7 +77,27 @@ impl KvStore {
 
     /// Removes a given key
     pub fn remove(&mut self, key: String) -> Result<()> {
-        unimplemented!();
+        if let Some(log_index) = self.log_index.get(&key) {
+            let log = Log::new("rm".to_string(), vec![key.to_owned()]);
+            self.log_file.write_all(&serde_json::to_vec(&log)?)?;
+            self.log_index.remove(&key).ok_or("Key not found");
+        } else {
+            return Err(anyhow::Error::msg("Key not found"));
+        }
+        Ok(())
+    }
+
+    fn build_log_index(file: File) -> Result<LogIndex> {
+        let file = BufReader::new(file);
+        Ok(serde_json::from_reader(file)?)
+    }
+
+    /// Serialize LogIndex and save it on disk
+    pub fn save_log_index(&self) -> Result<()> {
+        let mut file = KvStore::get_file(self.path.clone(), "index.log", false)?;
+        //println!("log_index: {:?}", self.log_index);
+        file.write_all(&serde_json::to_vec(&self.log_index)?)?;
+        Ok(())
     }
 
     /// Open the KvStore at a given path
@@ -87,33 +105,36 @@ impl KvStore {
     /// Return the KvStore
     pub fn open<T: Into<PathBuf>>(path: T) -> Result<Self> {
         let path = path.into();
-        let log_file = KvStore::get_file(path.clone(), "store.log");
-        let index_file = KvStore::get_file(path, "index.log");
+        let log_file = KvStore::get_file(path.clone(), "store.log", true)?;
+        let index_file = KvStore::get_file(path.clone(), "index.log", false)?;
+        let log_index = KvStore::build_log_index(index_file.try_clone()?).or_else(|e| {
+            //println!("{:?}", e);
+            Err(e)
+        }).unwrap_or(HashMap::new());
 
         Ok(KvStore {
-            log_index: HashMap::new(),
+            log_index, 
+            path,
             log_file,
             index_file,
         })
     }
 
-    fn get_file(path: PathBuf, filename: &str) -> Result<File> {
+    fn get_file(path: PathBuf, filename: &str, append: bool) -> Result<File> {
         create_dir_all(&path)?;
         let mut file_path = path;
         file_path.set_file_name(filename);
-        // println!("Path: {:?}", file_path);
 
-        OpenOptions::new()
-            .read(true)
-            .append(true)
-            .create(true)
-            .open(&file_path)
+        let mut options = OpenOptions::new();
+        options.read(true)
+            .write(true)
+            .create(true);
+
+        if append {
+            options.append(append);
+        }
+
+        options.open(&file_path)
             .map_err(|e| anyhow::Error::new(e))
-    }
-
-    fn calculate_hash<T: Hash>(t: &T) -> u64 {
-        let mut s = DefaultHasher::new();
-        t.hash(&mut s);
-        s.finish()
     }
 }
