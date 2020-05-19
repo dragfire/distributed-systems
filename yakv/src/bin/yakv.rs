@@ -1,5 +1,6 @@
 use clap::{App, Arg, SubCommand};
 use std::process::exit;
+use yakv::KvStore;
 
 fn main() {
     let matches = App::new(env!("CARGO_PKG_NAME"))
@@ -21,10 +22,17 @@ fn main() {
         )
         .get_matches();
 
+    let mut store = KvStore::new().unwrap();
     match matches.subcommand() {
         ("set", Some(_matches)) => {
-            eprintln!("unimplemented");
-            exit(1);
+            let vals: Vec<_> = _matches.values_of("set").unwrap().map(ToOwned::to_owned).collect();
+            match store.set(vals[0].to_string(), vals[1].to_string()) {
+                Ok(_) => exit(0),
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    exit(1)
+                }
+            }
         }
         ("get", Some(_matches)) => {
             eprintln!("unimplemented");
