@@ -1,7 +1,7 @@
 #![allow(warnings)]
 use anyhow;
 use std::env;
-use std::io::{Write, SeekFrom, Seek, BufRead, BufReader};
+use std::io::{Write, Read, SeekFrom, Seek, BufRead, BufReader};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::fs::{File, OpenOptions, create_dir_all};
@@ -50,8 +50,7 @@ impl Log {
 impl KvStore {
     /// Creates a KvStore
     pub fn new() -> Result<Self> {
-        let path = PathBuf::from("data/ ");
-        KvStore::open(path)
+        KvStore::open(env::current_dir()?)
     }
 
     /// Sets the value of a key to a string.
@@ -72,7 +71,18 @@ impl KvStore {
     ///
     /// Returns `None` if the key does not exist.
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        unimplemented!();
+        if let Some(log_index) = self.log_index.get(&key) {
+            self.log_file.seek(SeekFrom::Start(log_index.0));
+
+            let mut buf = vec![0u8; log_index.1];
+            self.log_file.read_exact(&mut buf)?;
+
+            let log: Log = serde_json::from_slice(&buf)?;
+            let val = log.args[1].to_owned();
+
+            return Ok(Some(val));
+        }
+        Ok(None)
     }
 
     /// Removes a given key
@@ -81,10 +91,11 @@ impl KvStore {
             let log = Log::new("rm".to_string(), vec![key.to_owned()]);
             self.log_file.write_all(&serde_json::to_vec(&log)?)?;
             self.log_index.remove(&key).ok_or("Key not found");
-        } else {
-            return Err(anyhow::Error::msg("Key not found"));
-        }
-        Ok(())
+
+            return Ok(());
+        } 
+
+        Err(anyhow::Error::msg("Key not found"))
     }
 
     fn build_log_index(file: File) -> Result<LogIndex> {
@@ -104,7 +115,9 @@ impl KvStore {
     ///
     /// Return the KvStore
     pub fn open<T: Into<PathBuf>>(path: T) -> Result<Self> {
-        let path = path.into();
+        let data_path: PathBuf = PathBuf::from("data/ ");
+        let mut path = path.into();
+        path.push(data_path);
         let log_file = KvStore::get_file(path.clone(), "store.log", true)?;
         let index_file = KvStore::get_file(path.clone(), "index.log", false)?;
         let log_index = KvStore::build_log_index(index_file.try_clone()?).or_else(|e| {

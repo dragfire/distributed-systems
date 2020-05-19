@@ -38,8 +38,20 @@ fn main() {
             }
         }
         ("get", Some(_matches)) => {
-            eprintln!("unimplemented");
-            exit(1);
+            let key = _matches.value_of("KEY").map(ToOwned::to_owned).unwrap();
+            match store.get(key) {
+                Ok(val) => {
+                    match val {
+                        Some(v) => println!("{}", v),
+                        None => println!("Key not found"),
+                    }
+                    exit(0)
+                }
+                Err(e) => {
+                    println!("{:?}", e);
+                    exit(1)
+                }
+            }
         }
         ("rm", Some(_matches)) => {
             let key = _matches.value_of("KEY").map(ToOwned::to_owned).unwrap();
