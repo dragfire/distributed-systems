@@ -28,7 +28,6 @@ fn main() {
             let vals: Vec<_> = _matches.values_of("set").unwrap().map(ToOwned::to_owned).collect();
             match store.set(vals[0].to_string(), vals[1].to_string()) {
                 Ok(_) => {
-                    store.save_log_index().unwrap();
                     exit(0)
                 }
                 Err(e) => {
@@ -57,7 +56,6 @@ fn main() {
             let key = _matches.value_of("KEY").map(ToOwned::to_owned).unwrap();
             match store.remove(key) {
                 Ok(_) => {
-                    store.save_log_index().unwrap();
                     exit(0)
                 }
                 Err(e) => {

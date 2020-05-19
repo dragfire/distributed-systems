@@ -12,6 +12,21 @@ use serde::{Serialize, Deserialize};
 pub type Result<T> = anyhow::Result<T>;
 pub type LogIndex = HashMap<String, (u64, usize)>;
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
+pub struct Log {
+    command: String, 
+    args: Vec<String>,
+}
+
+impl Log {
+    fn new(command: String, args: Vec<String>) -> Self {
+        Log {
+            command,
+            args,
+        }
+    }
+}
+
 /// KvStore stores string key/value pairs.
 ///
 /// Key/Value pairs are stored in a `HashMap` in memory and not persisted to disk.
@@ -32,21 +47,6 @@ pub struct KvStore {
     pub index_file: File,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
-pub struct Log {
-    command: String, 
-    args: Vec<String>,
-}
-
-impl Log {
-    fn new(command: String, args: Vec<String>) -> Self {
-        Log {
-            command,
-            args,
-        }
-    }
-}
-
 impl KvStore {
     /// Creates a KvStore
     pub fn new() -> Result<Self> {
@@ -63,6 +63,7 @@ impl KvStore {
         self.log_index.insert(key, (self.log_file.metadata()?.len(), log_bytes.len()));
 
         self.log_file.write_all(log_bytes)?;
+        self.save_log_index();
 
         Ok(())
     }
@@ -90,7 +91,8 @@ impl KvStore {
         if let Some(log_index) = self.log_index.get(&key) {
             let log = Log::new("rm".to_string(), vec![key.to_owned()]);
             self.log_file.write_all(&serde_json::to_vec(&log)?)?;
-            self.log_index.remove(&key).ok_or("Key not found");
+            self.log_index.remove(&key).ok_or("Log Index: Key not found");
+            self.save_log_index();
 
             return Ok(());
         } 
