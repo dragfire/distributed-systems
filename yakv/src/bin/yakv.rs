@@ -26,11 +26,13 @@ fn main() {
     let mut store = KvStore::open(env::current_dir().unwrap()).unwrap();
     match matches.subcommand() {
         ("set", Some(_matches)) => {
-            let vals: Vec<_> = _matches.values_of("set").unwrap().map(ToOwned::to_owned).collect();
+            let vals: Vec<_> = _matches
+                .values_of("set")
+                .unwrap()
+                .map(ToOwned::to_owned)
+                .collect();
             match store.set(vals[0].to_string(), vals[1].to_string()) {
-                Ok(_) => {
-                    exit(0)
-                }
+                Ok(_) => exit(0),
                 Err(e) => {
                     eprintln!("{:?}", e);
                     exit(1)
@@ -56,9 +58,7 @@ fn main() {
         ("rm", Some(_matches)) => {
             let key = _matches.value_of("KEY").map(ToOwned::to_owned).unwrap();
             match store.remove(key) {
-                Ok(_) => {
-                    exit(0)
-                }
+                Ok(_) => exit(0),
                 Err(e) => {
                     println!("{:?}", e);
                     exit(1)

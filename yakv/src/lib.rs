@@ -1,8 +1,10 @@
 use anyhow;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 pub type Result<T> = anyhow::Result<T>;
@@ -26,8 +28,10 @@ pub type Result<T> = anyhow::Result<T>;
 /// ```
 pub struct KvStore {
     path: PathBuf,
+    current_id: u64,
+    writer: BufWriterWithPos<File>,
     readers: HashMap<u64, BufReaderWithPos<File>>,
-    index: BTreeMap<u64, CommandPos>,
+    index: BTreeMap<String, CommandPos>,
     stale_data: u64,
 }
 
@@ -52,10 +56,13 @@ impl KvStore {
             readers.insert(id, reader);
         }
 
-        let cur_id = ids.last().unwrap_or(&0) + 1;
+        let current_id = ids.last().unwrap_or(&0) + 1;
+        let writer = create_log_file(current_id, &path, &mut readers)?;
 
         Ok(KvStore {
             path,
+            current_id,
+            writer,
             readers,
             index,
             stale_data,
@@ -64,7 +71,21 @@ impl KvStore {
 
     /// Sets the value of s string key to a string.
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        unimplemented!();
+        let cmd = Command::set(key, value);
+        let pos = self.writer.pos;
+        serde_json::to_writer(&mut self.writer, &cmd)?;
+        self.writer.flush()?;
+
+        if let Command::Set { key, .. } = cmd {
+            if let Some(old_cmd) = self.index.insert(
+                key,
+                CommandPos::from((self.current_id, pos..self.writer.pos)),
+            ) {
+                self.stale_data += old_cmd.len;
+            }
+        }
+        // TODO: Handle log compaction
+        Ok(())
     }
 
     /// Gets the string value for a given key.
@@ -82,11 +103,22 @@ fn log_path<T: AsRef<Path>>(path: T, id: u64) -> PathBuf {
     path.as_ref().join(format!("{}.log", id))
 }
 
+fn create_log_file(
+    id: u64,
+    path: &Path,
+    readers: &mut HashMap<u64, BufReaderWithPos<File>>,
+) -> Result<BufWriterWithPos<File>> {
+    let path = log_path(&path, id);
+    let writer = BufWriterWithPos::new(OpenOptions::new().create(true).append(true).open(&path)?)?;
+    readers.insert(id, BufReaderWithPos::new(File::open(&path)?)?);
+    Ok(writer)
+}
+
 // load a log and build index
 fn load_log(
     id: u64,
     reader: &mut BufReaderWithPos<File>,
-    index: &mut BTreeMap<u64, CommandPos>,
+    index: &mut BTreeMap<String, CommandPos>,
 ) -> Result<u64> {
     Ok(0)
 }
@@ -156,8 +188,57 @@ impl<T: Write + Seek> BufWriterWithPos<T> {
     }
 }
 
+impl<T: Write + Seek> Write for BufWriterWithPos<T> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let len = self.writer.write(buf)?;
+        self.pos += len as u64;
+        Ok(len)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.writer.flush()
+    }
+}
+
+impl<T: Write + Seek> Seek for BufWriterWithPos<T> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.pos = self.writer.seek(pos)?;
+        Ok(self.pos)
+    }
+}
+
+/// Represent KV store commands
+#[derive(Serialize, Deserialize, Debug)]
+enum Command {
+    Set { key: String, value: String },
+    Remove { key: String },
+}
+
+impl Command {
+    fn set(key: String, value: String) -> Self {
+        Command::Set { key, value }
+    }
+
+    fn remove(key: String) -> Self {
+        Command::Remove { key }
+    }
+}
+
+/// Position for Command in log file
+///
+/// Stores log file id, offset, and length
 struct CommandPos {
     id: u64,
     pos: u64,
     len: u64,
+}
+
+impl From<(u64, Range<u64>)> for CommandPos {
+    fn from((id, range): (u64, Range<u64>)) -> Self {
+        CommandPos {
+            id,
+            pos: range.start,
+            len: range.end - range.start,
+        }
+    }
 }
