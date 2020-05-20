@@ -1,5 +1,6 @@
 use anyhow;
 use serde::{Deserialize, Serialize};
+use serde_json::Deserializer;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
@@ -120,7 +121,28 @@ fn load_log(
     reader: &mut BufReaderWithPos<File>,
     index: &mut BTreeMap<String, CommandPos>,
 ) -> Result<u64> {
-    Ok(0)
+    let mut pos = reader.seek(SeekFrom::Start(0))?;
+    let mut stream = Deserializer::from_reader(reader).into_iter::<Command>();
+    let mut stale_data = 0;
+    while let Some(cmd) = stream.next() {
+        let new_pos = stream.byte_offset() as u64;
+        match cmd? {
+            Command::Set { key, .. } => {
+                if let Some(old_cmd) = index.insert(key, CommandPos::from((id, pos..new_pos))) {
+                    stale_data += old_cmd.len;
+                }
+            }
+            Command::Remove { key } => {
+                if let Some(old_cmd) = index.remove(&key) {
+                    stale_data += old_cmd.len;
+                }
+
+                stale_data += new_pos - pos;
+            }
+        }
+        pos = new_pos;
+    }
+    Ok(stale_data)
 }
 
 // get all ids from the log files in a given path
