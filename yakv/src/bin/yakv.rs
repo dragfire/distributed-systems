@@ -1,4 +1,5 @@
 use clap::{App, Arg, SubCommand};
+use std::env;
 use std::process::exit;
 use yakv::KvStore;
 
@@ -22,7 +23,7 @@ fn main() {
         )
         .get_matches();
 
-    let mut store = KvStore::new().unwrap();
+    let mut store = KvStore::open(env::current_dir().unwrap()).unwrap();
     match matches.subcommand() {
         ("set", Some(_matches)) => {
             let vals: Vec<_> = _matches.values_of("set").unwrap().map(ToOwned::to_owned).collect();

@@ -1,155 +1,163 @@
-#![allow(warnings)]
 use anyhow;
-use std::env;
-use std::io::{Write, Read, SeekFrom, Seek, BufRead, BufReader};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::ffi::OsStr;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::fs::{File, OpenOptions, create_dir_all};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-use serde::{Serialize, Deserialize};
 
 pub type Result<T> = anyhow::Result<T>;
-pub type LogIndex = HashMap<String, (u64, usize)>;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
-pub struct Log {
-    command: String, 
-    args: Vec<String>,
-}
-
-impl Log {
-    fn new(command: String, args: Vec<String>) -> Self {
-        Log {
-            command,
-            args,
-        }
-    }
-}
-
-/// KvStore stores string key/value pairs.
+/// The `KvStore` stores string key/value pairs.
 ///
-/// Key/Value pairs are stored in a `HashMap` in memory and not persisted to disk.
-///
-/// Example:
+/// Key/value pairs are persisted to disk in log files. Log files are named after
+/// monotonically increasing generation numbers with a `log` extension name.
+/// A `BTreeMap` in memory stores the keys and the value locations for fast query.
 ///
 /// ```rust
-/// # use kvs::KvStore;
-/// let mut store = KvStore::new();
-/// store.set("key".to_owned(), "value".to_owned());
-/// let val = store.get("key".to_owned());
+/// # use kvs::{KvStore, Result};
+/// # fn try_main() -> Result<()> {
+/// use std::env::current_dir;
+/// let mut store = KvStore::open(current_dir()?)?;
+/// store.set("key".to_owned(), "value".to_owned())?;
+/// let val = store.get("key".to_owned())?;
 /// assert_eq!(val, Some("value".to_owned()));
+/// # Ok(())
+/// # }
 /// ```
 pub struct KvStore {
-    pub log_index: LogIndex,
-    pub path: PathBuf,
-    pub log_file: File,
-    pub index_file: File,
+    path: PathBuf,
+    readers: HashMap<u64, BufReaderWithPos<File>>,
+    index: BTreeMap<u64, CommandPos>,
+    stale_data: u64,
 }
 
 impl KvStore {
-    /// Creates a KvStore
-    pub fn new() -> Result<Self> {
-        KvStore::open(env::current_dir()?)
-    }
-
-    /// Sets the value of a key to a string.
-    ///
-    /// It overwrites the value if key is already in the store.
-    pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        let log = Log::new("set".to_string(), vec![key.to_owned(), value.to_owned()]);
-        let log_bytes = &serde_json::to_vec(&log)?;
-
-        self.log_index.insert(key, (self.log_file.metadata()?.len(), log_bytes.len()));
-
-        self.log_file.write_all(log_bytes)?;
-        self.save_log_index();
-
-        Ok(())
-    }
-
-    /// Gets the string value of a given key string.
-    ///
-    /// Returns `None` if the key does not exist.
-    pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        if let Some(log_index) = self.log_index.get(&key) {
-            self.log_file.seek(SeekFrom::Start(log_index.0));
-
-            let mut buf = vec![0u8; log_index.1];
-            self.log_file.read_exact(&mut buf)?;
-
-            let log: Log = serde_json::from_slice(&buf)?;
-            let val = log.args[1].to_owned();
-
-            return Ok(Some(val));
-        }
-        Ok(None)
-    }
-
-    /// Removes a given key
-    pub fn remove(&mut self, key: String) -> Result<()> {
-        if let Some(log_index) = self.log_index.get(&key) {
-            let log = Log::new("rm".to_string(), vec![key.to_owned()]);
-            self.log_file.write_all(&serde_json::to_vec(&log)?)?;
-            self.log_index.remove(&key).ok_or("Log Index: Key not found");
-            self.save_log_index();
-
-            return Ok(());
-        } 
-
-        Err(anyhow::Error::msg("Key not found"))
-    }
-
-    fn build_log_index(file: File) -> Result<LogIndex> {
-        let file = BufReader::new(file);
-        Ok(serde_json::from_reader(file)?)
-    }
-
-    /// Serialize LogIndex and save it on disk
-    pub fn save_log_index(&self) -> Result<()> {
-        let mut file = KvStore::get_file(self.path.clone(), "index.log", false)?;
-        //println!("log_index: {:?}", self.log_index);
-        file.write_all(&serde_json::to_vec(&self.log_index)?)?;
-        Ok(())
-    }
-
-    /// Open the KvStore at a given path
-    ///
-    /// Return the KvStore
+    /// Opens a KvStore with the given path.
     pub fn open<T: Into<PathBuf>>(path: T) -> Result<Self> {
-        let data_path: PathBuf = PathBuf::from("data/ ");
-        let mut path = path.into();
-        path.push(data_path);
-        let log_file = KvStore::get_file(path.clone(), "store.log", true)?;
-        let index_file = KvStore::get_file(path.clone(), "index.log", false)?;
-        let log_index = KvStore::build_log_index(index_file.try_clone()?).or_else(|e| {
-            //println!("{:?}", e);
-            Err(e)
-        }).unwrap_or(HashMap::new());
+        // try to load all log files in the given path
+        // if it failed then create a log file with an id suffix-ed to the file
+        // e.g. key-1.log, key-2.log, key-3.log, etc
+        // after loading all the logs, build the index in-memory
+        let path = path.into();
+        fs::create_dir_all(&path)?;
+
+        let mut readers = HashMap::new();
+        let mut index = BTreeMap::new();
+        let mut stale_data = 0;
+
+        let ids = sorted_ids(&path)?;
+        for &id in &ids {
+            let mut reader = BufReaderWithPos::new(File::open(log_path(&path, id))?)?;
+            stale_data += load_log(id, &mut reader, &mut index)?;
+            readers.insert(id, reader);
+        }
+
+        let cur_id = ids.last().unwrap_or(&0) + 1;
 
         Ok(KvStore {
-            log_index, 
             path,
-            log_file,
-            index_file,
+            readers,
+            index,
+            stale_data,
         })
     }
 
-    fn get_file(path: PathBuf, filename: &str, append: bool) -> Result<File> {
-        create_dir_all(&path)?;
-        let mut file_path = path;
-        file_path.set_file_name(filename);
-
-        let mut options = OpenOptions::new();
-        options.read(true)
-            .write(true)
-            .create(true);
-
-        if append {
-            options.append(append);
-        }
-
-        options.open(&file_path)
-            .map_err(|e| anyhow::Error::new(e))
+    /// Sets the value of s string key to a string.
+    pub fn set(&mut self, key: String, value: String) -> Result<()> {
+        unimplemented!();
     }
+
+    /// Gets the string value for a given key.
+    pub fn get(&mut self, key: String) -> Result<Option<String>> {
+        unimplemented!();
+    }
+
+    /// Removes the given key.
+    pub fn remove(&mut self, key: String) -> Result<()> {
+        unimplemented!();
+    }
+}
+
+fn log_path<T: AsRef<Path>>(path: T, id: u64) -> PathBuf {
+    path.as_ref().join(format!("{}.log", id))
+}
+
+// load a log and build index
+fn load_log(
+    id: u64,
+    reader: &mut BufReaderWithPos<File>,
+    index: &mut BTreeMap<u64, CommandPos>,
+) -> Result<u64> {
+    Ok(0)
+}
+
+// get all ids from the log files in a given path
+//
+// Returns sorted id numbers
+fn sorted_ids(path: &Path) -> Result<Vec<u64>> {
+    let mut ids: Vec<u64> = path
+        .read_dir()?
+        .flat_map(|dir_entry| -> Result<_> { Ok(dir_entry?.path()) })
+        .filter(|path| path.is_file() && path.ends_with(".log"))
+        .filter_map(|path| {
+            path.file_name()
+                .and_then(OsStr::to_str)
+                .map(|s| s.trim_end_matches(".log"))
+                .map(str::parse::<u64>)
+        })
+        .flatten()
+        .collect();
+    ids.sort();
+    Ok(ids)
+}
+
+pub struct BufReaderWithPos<T: Read + Seek> {
+    reader: BufReader<T>,
+    pos: u64,
+}
+
+impl<T: Read + Seek> BufReaderWithPos<T> {
+    fn new(mut file: T) -> Result<Self> {
+        let pos = file.seek(SeekFrom::Current(0))?;
+        Ok(BufReaderWithPos {
+            reader: BufReader::new(file),
+            pos,
+        })
+    }
+}
+
+impl<T: Read + Seek> Read for BufReaderWithPos<T> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let len = self.reader.read(buf)?;
+        self.pos += len as u64;
+        Ok(len)
+    }
+}
+
+impl<T: Read + Seek> Seek for BufReaderWithPos<T> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.pos = self.reader.seek(pos)?;
+        Ok(self.pos)
+    }
+}
+
+struct BufWriterWithPos<T: Write + Seek> {
+    writer: BufWriter<T>,
+    pos: u64,
+}
+
+impl<T: Write + Seek> BufWriterWithPos<T> {
+    fn new(mut file: T) -> Result<Self> {
+        let pos = file.seek(SeekFrom::Current(0))?;
+        Ok(BufWriterWithPos {
+            writer: BufWriter::new(file),
+            pos,
+        })
+    }
+}
+
+struct CommandPos {
+    id: u64,
+    pos: u64,
+    len: u64,
 }
