@@ -1,6 +1,6 @@
 use anyhow;
 use serde::{Deserialize, Serialize};
-use serde_json::Deserializer;
+use serde_json::{self, Deserializer};
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
@@ -112,7 +112,17 @@ impl KvStore {
 
     /// Removes the given key.
     pub fn remove(&mut self, key: String) -> Result<()> {
-        unimplemented!();
+        // check if key exist in index and delete if from the log file
+        if self.index.contains_key(&key) {
+            let cmd = Command::remove(key.to_owned());
+            serde_json::to_writer(&mut self.writer, &cmd)?;
+            self.writer.flush()?;
+            let old_cmd = self.index.remove(&key).expect("Key not found");
+            self.stale_data += old_cmd.len;
+            Ok(())
+        } else {
+            Err(anyhow::Error::msg("Key not found"))
+        }
     }
 }
 
