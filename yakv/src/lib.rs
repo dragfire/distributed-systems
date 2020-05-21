@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 
 pub type Result<T> = anyhow::Result<T>;
 
+// This constant is used for invoking log compaction
+const COMPACTION_THRESHOLD: u64 = 1024 * 1024;
+
 /// The `KvStore` stores string key/value pairs.
 ///
 /// Key/value pairs are persisted to disk in log files. Log files are named after
@@ -17,7 +20,7 @@ pub type Result<T> = anyhow::Result<T>;
 /// A `BTreeMap` in memory stores the keys and the value locations for fast query.
 ///
 /// ```rust
-/// # use kvs::{KvStore, Result};
+/// # use yakv::{KvStore, Result};
 /// # fn try_main() -> Result<()> {
 /// use std::env::current_dir;
 /// let mut store = KvStore::open(current_dir()?)?;
@@ -86,7 +89,12 @@ impl KvStore {
                 self.stale_data += old_cmd.len;
             }
         }
-        // TODO: Handle log compaction
+
+        // Handle log compaction
+        if self.stale_data > COMPACTION_THRESHOLD {
+            self.compact()?;
+        }
+
         Ok(())
     }
 
@@ -123,6 +131,44 @@ impl KvStore {
         } else {
             Err(anyhow::Error::msg("Key not found"))
         }
+    }
+
+    fn compact(&mut self) -> Result<()> {
+        // increment id by 1
+        // this will be used by compaction writer
+        let compaction_id = self.current_id + 1;
+        self.current_id += 2;
+        self.writer = create_log_file(self.current_id, &self.path, &mut self.readers)?;
+        let mut compaction_writer = create_log_file(compaction_id, &self.path, &mut self.readers)?;
+
+        let mut new_pos = 0;
+        for cmd_pos in &mut self.index.values_mut() {
+            let cmd_reader = self.readers.get_mut(&cmd_pos.id).expect("reader not found");
+            if cmd_reader.pos != cmd_pos.pos {
+                cmd_reader.seek(SeekFrom::Start(cmd_pos.pos))?;
+            }
+
+            let mut cmd_reader = cmd_reader.take(cmd_pos.len);
+            let len = io::copy(&mut cmd_reader, &mut compaction_writer)?;
+            *cmd_pos = CommandPos::from((compaction_id, new_pos..new_pos + len));
+            new_pos += len;
+        }
+        compaction_writer.flush()?;
+
+        let stale_ids: Vec<_> = self
+            .readers
+            .keys()
+            .filter(|id| id < &&compaction_id)
+            .cloned()
+            .collect();
+
+        for stale_id in stale_ids {
+            self.readers.remove(&stale_id);
+            fs::remove_file(log_path(&self.path, stale_id))?;
+        }
+        self.stale_data = 0;
+
+        Ok(())
     }
 }
 
