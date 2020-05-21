@@ -51,6 +51,7 @@ impl KvStore {
         let mut stale_data = 0;
 
         let ids = sorted_ids(&path)?;
+        // println!("IDS: {:?}", ids);
         for &id in &ids {
             let mut reader = BufReaderWithPos::new(File::open(log_path(&path, id))?)?;
             stale_data += load_log(id, &mut reader, &mut index)?;
@@ -91,7 +92,22 @@ impl KvStore {
 
     /// Gets the string value for a given key.
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        unimplemented!();
+        // println!("{:?}", self.index);
+        if let Some(cmd_pos) = self.index.get(&key) {
+            let reader = self
+                .readers
+                .get_mut(&cmd_pos.id)
+                .expect("Cannot find reader");
+
+            reader.seek(SeekFrom::Start(cmd_pos.pos))?;
+            let cmd_reader = reader.take(cmd_pos.len);
+            if let Command::Set { value, .. } = serde_json::from_reader(cmd_reader)? {
+                return Ok(Some(value));
+            } else {
+                return Err(anyhow::Error::msg("Unexpected command"));
+            }
+        }
+        Ok(None)
     }
 
     /// Removes the given key.
@@ -124,6 +140,7 @@ fn load_log(
     let mut pos = reader.seek(SeekFrom::Start(0))?;
     let mut stream = Deserializer::from_reader(reader).into_iter::<Command>();
     let mut stale_data = 0;
+    // println!("ID: {}", id);
     while let Some(cmd) = stream.next() {
         let new_pos = stream.byte_offset() as u64;
         match cmd? {
@@ -149,10 +166,9 @@ fn load_log(
 //
 // Returns sorted id numbers
 fn sorted_ids(path: &Path) -> Result<Vec<u64>> {
-    let mut ids: Vec<u64> = path
-        .read_dir()?
+    let mut ids: Vec<u64> = fs::read_dir(&path)?
         .flat_map(|dir_entry| -> Result<_> { Ok(dir_entry?.path()) })
-        .filter(|path| path.is_file() && path.ends_with(".log"))
+        .filter(|path| path.is_file() && path.extension() == Some("log".as_ref()))
         .filter_map(|path| {
             path.file_name()
                 .and_then(OsStr::to_str)
@@ -249,6 +265,7 @@ impl Command {
 /// Position for Command in log file
 ///
 /// Stores log file id, offset, and length
+#[derive(Debug)]
 struct CommandPos {
     id: u64,
     pos: u64,
