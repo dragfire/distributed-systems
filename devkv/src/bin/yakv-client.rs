@@ -1,25 +1,48 @@
 use clap::{App, Arg, SubCommand};
 use std::env;
 use std::process::exit;
-use yakv::KvStore;
+use yakv::{KvStore, Result};
 
-fn main() {
+fn main() -> Result<()> {
     let matches = App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .subcommand(
-            SubCommand::with_name("set").arg(
-                Arg::with_name("set")
-                    .value_names(&["KEY", "VALUE"])
-                    .takes_value(true)
-                    .number_of_values(2),
-            ),
+            SubCommand::with_name("set")
+                .arg(
+                    Arg::with_name("set")
+                        .value_names(&["KEY", "VALUE"])
+                        .takes_value(true)
+                        .number_of_values(2),
+                )
+                .arg(
+                    Arg::with_name("addr")
+                        .long("addr")
+                        .value_name("IP-PORT")
+                        .takes_value(true)
+                        .required(true),
+                ),
         )
         .subcommand(
             SubCommand::with_name("get")
-                .arg(Arg::with_name("KEY").takes_value(true).required(true)),
+                .arg(Arg::with_name("KEY").takes_value(true).required(true))
+                .arg(
+                    Arg::with_name("addr")
+                        .long("addr")
+                        .value_name("IP-PORT")
+                        .takes_value(true)
+                        .required(true),
+                ),
         )
         .subcommand(
-            SubCommand::with_name("rm").arg(Arg::with_name("KEY").takes_value(true).required(true)),
+            SubCommand::with_name("rm")
+                .arg(Arg::with_name("KEY").takes_value(true).required(true))
+                .arg(
+                    Arg::with_name("addr")
+                        .long("addr")
+                        .value_name("IP-PORT")
+                        .takes_value(true)
+                        .required(true),
+                ),
         )
         .get_matches();
 
@@ -31,13 +54,7 @@ fn main() {
                 .unwrap()
                 .map(ToOwned::to_owned)
                 .collect();
-            match store.set(vals[0].to_string(), vals[1].to_string()) {
-                Ok(_) => exit(0),
-                Err(e) => {
-                    eprintln!("{:?}", e);
-                    exit(1)
-                }
-            }
+            store.set(vals[0].to_string(), vals[1].to_string())?;
         }
         ("get", Some(_matches)) => {
             let key = _matches.value_of("KEY").map(ToOwned::to_owned).unwrap();
@@ -67,4 +84,5 @@ fn main() {
         }
         _ => unreachable!(),
     }
+    Ok(())
 }
