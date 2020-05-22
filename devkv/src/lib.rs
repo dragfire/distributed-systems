@@ -2,7 +2,9 @@
 //! Yet another Key/Value store
 
 pub use engine::KvsEngine;
-pub use yakv::{KvStore, Result};
+pub use error::{Result, YakvError};
+pub use yakv::KvStore;
 
 mod engine;
+mod error;
 mod yakv;

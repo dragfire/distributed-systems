@@ -8,8 +8,7 @@ use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-/// Result handles Result<T, anyhow::Error>
-pub type Result<T> = anyhow::Result<T>;
+use crate::{Result, YakvError};
 
 // This constant is used for invoking log compaction
 const COMPACTION_THRESHOLD: u64 = 1024 * 1024;
@@ -113,7 +112,7 @@ impl KvStore {
             if let Command::Set { value, .. } = serde_json::from_reader(cmd_reader)? {
                 return Ok(Some(value));
             } else {
-                return Err(anyhow::Error::msg("Unexpected command"));
+                return Err(YakvError::UnexpectedCommand);
             }
         }
         Ok(None)
@@ -130,7 +129,7 @@ impl KvStore {
             self.stale_data += old_cmd.len;
             Ok(())
         } else {
-            Err(anyhow::Error::msg("Key not found"))
+            Err(YakvError::NotFoundError(key))
         }
     }
 
