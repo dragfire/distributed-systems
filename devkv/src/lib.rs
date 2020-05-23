@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 //! Yet another Key/Value store
 
-pub use engine::KvsEngine;
+pub use engine::YakvEngine;
 pub use error::{Result, YakvError};
 pub use yakv::KvStore;
 

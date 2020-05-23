@@ -1,7 +1,7 @@
 use clap::{App, Arg, SubCommand};
 use std::env;
 use std::process::exit;
-use yakv::{KvStore, Result};
+use yakv::{KvStore, Result, YakvEngine};
 
 fn main() -> Result<()> {
     let matches = App::new(env!("CARGO_PKG_NAME"))

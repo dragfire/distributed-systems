@@ -1,4 +1,3 @@
-use anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Deserializer};
 use std::collections::{BTreeMap, HashMap};
@@ -8,7 +7,7 @@ use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use crate::{Result, YakvError};
+use crate::{Result, YakvEngine, YakvError};
 
 // This constant is used for invoking log compaction
 const COMPACTION_THRESHOLD: u64 = 1024 * 1024;
@@ -74,65 +73,6 @@ impl KvStore {
         })
     }
 
-    /// Sets the value of s string key to a string.
-    pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        let cmd = Command::set(key, value);
-        let pos = self.writer.pos;
-        serde_json::to_writer(&mut self.writer, &cmd)?;
-        self.writer.flush()?;
-
-        if let Command::Set { key, .. } = cmd {
-            if let Some(old_cmd) = self.index.insert(
-                key,
-                CommandPos::from((self.current_id, pos..self.writer.pos)),
-            ) {
-                self.stale_data += old_cmd.len;
-            }
-        }
-
-        // Handle log compaction
-        if self.stale_data > COMPACTION_THRESHOLD {
-            self.compact()?;
-        }
-
-        Ok(())
-    }
-
-    /// Gets the string value for a given key.
-    pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        // println!("{:?}", self.index);
-        if let Some(cmd_pos) = self.index.get(&key) {
-            let reader = self
-                .readers
-                .get_mut(&cmd_pos.id)
-                .expect("Cannot find reader");
-
-            reader.seek(SeekFrom::Start(cmd_pos.pos))?;
-            let cmd_reader = reader.take(cmd_pos.len);
-            if let Command::Set { value, .. } = serde_json::from_reader(cmd_reader)? {
-                return Ok(Some(value));
-            } else {
-                return Err(YakvError::UnexpectedCommand);
-            }
-        }
-        Ok(None)
-    }
-
-    /// Removes the given key.
-    pub fn remove(&mut self, key: String) -> Result<()> {
-        // check if key exist in index and delete if from the log file
-        if self.index.contains_key(&key) {
-            let cmd = Command::remove(key.to_owned());
-            serde_json::to_writer(&mut self.writer, &cmd)?;
-            self.writer.flush()?;
-            let old_cmd = self.index.remove(&key).expect("Key not found");
-            self.stale_data += old_cmd.len;
-            Ok(())
-        } else {
-            Err(YakvError::NotFoundError(key))
-        }
-    }
-
     fn compact(&mut self) -> Result<()> {
         // increment id by 1
         // this will be used by compaction writer
@@ -169,6 +109,68 @@ impl KvStore {
         self.stale_data = 0;
 
         Ok(())
+    }
+}
+
+impl YakvEngine for KvStore {
+    /// Sets the value of s string key to a string.
+    fn set(&mut self, key: String, value: String) -> Result<()> {
+        let cmd = Command::set(key, value);
+        let pos = self.writer.pos;
+        serde_json::to_writer(&mut self.writer, &cmd)?;
+        self.writer.flush()?;
+
+        if let Command::Set { key, .. } = cmd {
+            if let Some(old_cmd) = self.index.insert(
+                key,
+                CommandPos::from((self.current_id, pos..self.writer.pos)),
+            ) {
+                self.stale_data += old_cmd.len;
+            }
+        }
+
+        // Handle log compaction
+        if self.stale_data > COMPACTION_THRESHOLD {
+            self.compact()?;
+        }
+
+        Ok(())
+    }
+
+    /// Gets the string value for a given key.
+    fn get(&mut self, key: String) -> Result<Option<String>> {
+        // println!("{:?}", self.index);
+        if let Some(cmd_pos) = self.index.get(&key) {
+            let reader = self
+                .readers
+                .get_mut(&cmd_pos.id)
+                .expect("Cannot find reader");
+
+            reader.seek(SeekFrom::Start(cmd_pos.pos))?;
+            let cmd_reader = reader.take(cmd_pos.len);
+            if let Command::Set { value, .. } = serde_json::from_reader(cmd_reader)? {
+                Ok(Some(value))
+            } else {
+                Err(YakvError::UnexpectedCommand)
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Removes the given key.
+    fn remove(&mut self, key: String) -> Result<()> {
+        // check if key exist in index and delete if from the log file
+        if self.index.contains_key(&key) {
+            let cmd = Command::remove(key.to_owned());
+            serde_json::to_writer(&mut self.writer, &cmd)?;
+            self.writer.flush()?;
+            let old_cmd = self.index.remove(&key).expect("Key not found");
+            self.stale_data += old_cmd.len;
+            Ok(())
+        } else {
+            Err(YakvError::NotFoundError(key))
+        }
     }
 }
 
