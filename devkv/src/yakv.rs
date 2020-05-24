@@ -214,6 +214,7 @@ fn load_log(
 
                 stale_data += new_pos - pos;
             }
+            Command::Get { key } => {}
         }
         pos = new_pos;
     }
@@ -304,19 +305,28 @@ impl<T: Write + Seek> Seek for BufWriterWithPos<T> {
 }
 
 /// Represent KV store commands
+#[allow(missing_docs)]
 #[derive(Serialize, Deserialize, Debug)]
-enum Command {
+pub enum Command {
     Set { key: String, value: String },
     Remove { key: String },
+    Get { key: String },
 }
 
 impl Command {
-    fn set(key: String, value: String) -> Self {
+    /// Return Command::Set variant
+    pub fn set(key: String, value: String) -> Self {
         Command::Set { key, value }
     }
 
-    fn remove(key: String) -> Self {
+    /// Return Command::Remove variant
+    pub fn remove(key: String) -> Self {
         Command::Remove { key }
+    }
+
+    /// Return Command::Get variant
+    pub fn get(key: String) -> Self {
+        Command::Get { key }
     }
 }
 

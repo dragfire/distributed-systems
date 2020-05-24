@@ -1,7 +1,9 @@
 use clap::{App, Arg, SubCommand};
 use std::env;
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::net::TcpStream;
 use std::process::exit;
-use yakv::{KvStore, Result, YakvEngine};
+use yakv::{Command, KvStore, Result, YakvEngine, YakvMessage};
 
 fn main() -> Result<()> {
     let matches = App::new(env!("CARGO_PKG_NAME"))
@@ -46,7 +48,8 @@ fn main() -> Result<()> {
         )
         .get_matches();
 
-    let mut store = KvStore::open(env::current_dir().unwrap()).unwrap();
+    let addr: &str;
+    let cmd: Command;
     match matches.subcommand() {
         ("set", Some(_matches)) => {
             let vals: Vec<_> = _matches
@@ -54,35 +57,27 @@ fn main() -> Result<()> {
                 .unwrap()
                 .map(ToOwned::to_owned)
                 .collect();
-            store.set(vals[0].to_string(), vals[1].to_string())?;
+            addr = _matches.value_of("addr").expect("Address arg is required");
+            cmd = Command::set(vals[0].to_string(), vals[1].to_string());
         }
         ("get", Some(_matches)) => {
             let key = _matches.value_of("KEY").map(ToOwned::to_owned).unwrap();
-            match store.get(key) {
-                Ok(val) => {
-                    match val {
-                        Some(v) => println!("{}", v),
-                        None => println!("Key not found"),
-                    }
-                    exit(0)
-                }
-                Err(e) => {
-                    println!("{:?}", e);
-                    exit(1)
-                }
-            }
+            addr = _matches.value_of("addr").expect("Address arg is required");
+            cmd = Command::get(key);
         }
         ("rm", Some(_matches)) => {
             let key = _matches.value_of("KEY").map(ToOwned::to_owned).unwrap();
-            match store.remove(key) {
-                Ok(_) => exit(0),
-                Err(e) => {
-                    println!("{:?}", e);
-                    exit(1)
-                }
-            }
+            addr = _matches.value_of("addr").expect("Address arg is required");
+            cmd = Command::remove(key);
         }
         _ => unreachable!(),
     }
+
+    // construct command and send it to server
+    let mut client = TcpStream::connect(addr)?;
+    let mut response = String::new();
+    client.write_all(&YakvMessage::get_bytes(cmd)?)?;
+    client.read_to_string(&mut response)?;
+    println!("{}", response);
     Ok(())
 }
