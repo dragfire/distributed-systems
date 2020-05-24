@@ -45,17 +45,29 @@ pub struct YakvMessage {
 }
 
 impl YakvMessage {
-    /// Prepend length: 4 bytes to payload
-    pub fn get_len_bytes(cmd: Command) -> Result<(u32, Vec<u8>)> {
-        let mut bytes: Vec<u8> = serde_json::to_vec::<Command>(&cmd)?;
+    /// Get length of the payload and convert payload to bytes
+    ///
+    /// Prepend length: 4 bytes to payload bytes
+    /// Returns (length, payload_bytes)
+    pub fn get_len_payload_bytes(payload: Payload) -> Result<(u32, Vec<u8>)> {
+        let mut bytes: Vec<u8> = vec![];
+        match payload {
+            Payload::Command(cmd) => {
+                bytes = serde_json::to_vec::<Command>(&cmd)?;
+            }
+            Payload::Response(val) => {
+                // do
+                bytes = val.into_bytes();
+            }
+            _ => {}
+        }
         let len = bytes.len() as u32;
-        let mut len_bytes: Vec<u8> = len.to_be_bytes().to_vec();
+        let mut len_bytes = len.to_be_bytes().to_vec();
         len_bytes.append(&mut bytes);
         Ok((len, len_bytes))
     }
 
-    /// Bytes to YakvMessage
-    fn get_payload_bytes(stream: &mut TcpStream) -> Result<(u32, Vec<u8>)> {
+    fn get_stream_payload_bytes(stream: &mut TcpStream) -> Result<(u32, Vec<u8>)> {
         let mut len_buf: [u8; 4] = [0; 4];
         let mut handle = stream.take(4);
         if handle.limit() != 4 {
@@ -70,7 +82,7 @@ impl YakvMessage {
 
     /// Returns payload from TcpStream and handle different payload types.
     pub fn new(stream: &mut TcpStream, ptype: PayloadType) -> Result<Self> {
-        let (length, buf) = YakvMessage::get_payload_bytes(stream)?;
+        let (length, buf) = YakvMessage::get_stream_payload_bytes(stream)?;
         let payload: Payload;
         match ptype {
             PayloadType::Command => {
@@ -91,8 +103,17 @@ impl YakvMessage {
 #[test]
 fn test_message_from_bytes() {
     let cmd = Command::remove("key".to_string());
-    let (length, bytes) = YakvMessage::get_len_bytes(cmd).unwrap();
-    let len_bytes: [u8; 4] = bytes[..4].try_into().expect("well");
+    let (length, bytes) = YakvMessage::get_len_payload_bytes(Payload::Command(cmd)).unwrap();
+    let len_bytes: [u8; 4] = bytes[..4].try_into().unwrap();
     let actual_len = u32::from_be_bytes(len_bytes);
     assert_eq!(length, actual_len);
+
+    let res_payload = Payload::Response("OK".to_string());
+    let (length, bytes) = YakvMessage::get_len_payload_bytes(res_payload).unwrap();
+    let len_bytes = bytes[..4].try_into().expect("Valid 4 bytes required");
+    let actual_len = u32::from_be_bytes(len_bytes);
+    assert_eq!(length, actual_len);
+
+    let str_bytes: Vec<u8> = bytes[4..].try_into().unwrap();
+    assert_eq!("OK".to_string(), String::from_utf8(str_bytes).unwrap());
 }

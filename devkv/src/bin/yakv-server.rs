@@ -57,15 +57,10 @@ impl YakvServer {
         let mut stream = stream;
         let message = YakvMessage::new(&mut stream, PayloadType::Command)?;
         info!(self.log, "Req: {:?}", message);
-        stream.write_all(&[1])?;
+        let response = YakvMessage::get_len_payload_bytes(Payload::Response("OK".to_string()))?;
+        stream.write_all(&response.1)?;
         stream.flush()?;
         Ok(())
-    }
-
-    fn get_message(&mut self, reader: &mut TcpStream) -> Result<Command> {
-        let mut req_str = String::new();
-        reader.read_to_string(&mut req_str)?;
-        Ok(serde_json::from_str::<Command>(&req_str)?)
     }
 }
 

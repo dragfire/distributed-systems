@@ -3,7 +3,7 @@ use std::env;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::TcpStream;
 use std::process::exit;
-use yakv::{Command, KvStore, Result, YakvEngine, YakvMessage};
+use yakv::{Command, KvStore, Payload, PayloadType, Result, YakvEngine, YakvMessage};
 
 fn main() -> Result<()> {
     let matches = App::new(env!("CARGO_PKG_NAME"))
@@ -74,13 +74,10 @@ fn main() -> Result<()> {
     }
 
     // construct command and send it to server
-    let mut client = TcpStream::connect(addr)?;
-    client.write_all(&YakvMessage::get_len_bytes(cmd)?.1)?;
-    let mut buf = [0; 1];
-    client.read_exact(&mut buf)?;
-    println!(
-        "{}",
-        String::from_utf8(buf.to_vec()).expect("Valid bytes required as Response.")
-    );
+    let mut stream = TcpStream::connect(addr)?;
+    stream.write_all(&YakvMessage::get_len_payload_bytes(Payload::Command(cmd))?.1)?;
+    stream.flush()?;
+    let response = YakvMessage::new(&mut stream, PayloadType::Response)?;
+    println!("{:?}", response.payload);
     Ok(())
 }
