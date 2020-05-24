@@ -45,7 +45,8 @@ impl KvStore {
         // if it failed then create a log file with an id suffix-ed to the file
         // e.g. key-1.log, key-2.log, key-3.log, etc
         // after loading all the logs, build the index in-memory
-        let path = path.into();
+        let mut path = path.into();
+        path.push("yakv_data");
         fs::create_dir_all(&path)?;
 
         let mut readers = HashMap::new();

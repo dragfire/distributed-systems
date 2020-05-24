@@ -1,12 +1,18 @@
+use anyhow::*;
 use clap::{App, Arg};
 use slog::*;
+use std::collections::HashSet;
 use std::env;
+use std::ffi::OsStr;
+use std::fs;
 use std::io::{BufReader, BufWriter, Read, Write};
+use std::iter::Iterator;
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use yakv::{Command, Payload, PayloadType, Result, YakvEngine, YakvError, YakvMessage};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 enum Engine {
     Yakv,
     Sled,
@@ -85,7 +91,7 @@ fn main() -> Result<()> {
                 .long("engine")
                 .value_name("ENGINE-NAME")
                 .takes_value(true)
-                .required(true),
+                .default_value("yakv"),
         )
         .get_matches();
 
@@ -96,9 +102,43 @@ fn main() -> Result<()> {
         engine: Engine::from_str(engine).expect("Use either sled or yakv as ENGINE value"),
     };
 
+    let existing_engines = get_existing_engines(env::current_dir()?)?;
+    if !existing_engines.is_empty() && !existing_engines.contains(&config.engine) {
+        return Err(YakvError::Any(anyhow!(
+            "Engine value is different from already used engines."
+        )));
+    }
+    // println!("engines: {:?}", existing_engines);
     // start server
     let mut server = YakvServer::new(config, log);
     server.start()?;
 
     Ok(())
+}
+
+fn get_existing_engines(path: PathBuf) -> Result<HashSet<Engine>> {
+    let existing_engines = fs::read_dir(path)?
+        .flat_map(|dir| dir.map(|e| e.path()))
+        .filter_map(|e| {
+            e.file_stem()
+                .and_then(OsStr::to_str)
+                .filter(|s| s.starts_with("engine"))
+                .map(|s| &s[7..11])
+                .map(Engine::from_str)
+        })
+        .flatten()
+        .collect();
+    Ok(existing_engines)
+}
+
+#[test]
+fn test_get_existing_engines() {
+    use tempfile::Builder;
+    let tmp_dir = Builder::new().tempdir().unwrap();
+    let path = tmp_dir.into_path();
+    let mut data_path = path.clone();
+    data_path.push("engine_yakv_data");
+    fs::create_dir_all(data_path).unwrap();
+    let engines = get_existing_engines(path).unwrap();
+    assert!(engines.iter().eq(vec![Engine::Yakv].iter()))
 }
