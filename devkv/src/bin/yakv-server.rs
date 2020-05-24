@@ -49,13 +49,17 @@ impl YakvServer {
     }
 
     fn start(&mut self) -> Result<()> {
-        info!(self.log, "config: {:?}", self.config);
+        info!(self.log, "engine: {:?}", self.config.engine);
+        info!(self.log, "ip: {:?}", self.config.addr);
         let listener = TcpListener::bind(&self.config.addr)?;
-        for stream in listener.incoming() {
-            let tcp_stream = stream?;
-            info!(self.log, "connection accepted");
-            self.handle_request(tcp_stream)?;
-        }
+        let tcp_stream = listener.accept()?.0;
+        info!(self.log, "connection accepted");
+        self.handle_request(tcp_stream)?;
+        // for stream in listener.incoming() {
+        //     let tcp_stream = stream?;
+        //     info!(self.log, "connection accepted");
+        //     self.handle_request(tcp_stream)?;
+        // }
         Ok(())
     }
 
@@ -99,7 +103,7 @@ fn main() -> Result<()> {
     let engine = matches.value_of("engine").expect("ENGINE arg is required");
     let config = Config {
         addr: SocketAddr::from_str(addr).expect("Address is not a valid IPV4 address."),
-        engine: Engine::from_str(engine).expect("Use either sled or yakv as ENGINE value"),
+        engine: Engine::from_str(engine).unwrap_or(Engine::Yakv),
     };
 
     let existing_engines = get_existing_engines(env::current_dir()?)?;

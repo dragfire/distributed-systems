@@ -167,7 +167,7 @@ fn cli_log_configuration() {
 
     let content = fs::read_to_string(&stderr_path).expect("unable to read from stderr file");
     assert!(content.contains(env!("CARGO_PKG_VERSION")));
-    assert!(content.contains("kvs"));
+    assert!(content.contains("Yakv"));
     assert!(content.contains("127.0.0.1:4001"));
 }
 
