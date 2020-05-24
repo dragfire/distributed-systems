@@ -75,9 +75,12 @@ fn main() -> Result<()> {
 
     // construct command and send it to server
     let mut client = TcpStream::connect(addr)?;
-    let mut response = String::new();
-    client.write_all(&YakvMessage::get_bytes(cmd)?)?;
-    client.read_to_string(&mut response)?;
-    println!("{}", response);
+    client.write_all(&YakvMessage::get_len_bytes(cmd)?.1)?;
+    let mut buf = [0; 1];
+    client.read_exact(&mut buf)?;
+    println!(
+        "{}",
+        String::from_utf8(buf.to_vec()).expect("Valid bytes required as Response.")
+    );
     Ok(())
 }

@@ -57,7 +57,7 @@ impl YakvServer {
         let mut stream = stream;
         let message = YakvMessage::new(&mut stream, PayloadType::Command)?;
         info!(self.log, "Req: {:?}", message);
-        stream.write(b"Ok")?;
+        stream.write_all(&[1])?;
         stream.flush()?;
         Ok(())
     }

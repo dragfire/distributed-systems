@@ -1,6 +1,6 @@
 use tempfile::TempDir;
 use walkdir::WalkDir;
-use yakv::{KvStore, KvsEngine, Result};
+use yakv::{KvStore, Result, YakvEngine};
 
 // Should get previously stored value
 #[test]
