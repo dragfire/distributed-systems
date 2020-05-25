@@ -10,7 +10,7 @@ use std::iter::Iterator;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use yakv::{Command, Payload, PayloadType, Result, YakvEngine, YakvError, YakvMessage};
+use yakv::{Command, KvStore, Payload, PayloadType, Result, YakvEngine, YakvError, YakvMessage};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 enum Engine {
@@ -38,28 +38,29 @@ struct Config {
     engine: Engine,
 }
 
-struct YakvServer {
+struct YakvServer<E> {
     config: Config,
     log: slog::Logger,
+    store: E,
 }
 
-impl YakvServer {
-    fn new(config: Config, log: slog::Logger) -> Self {
-        YakvServer { config, log }
+impl<E: YakvEngine> YakvServer<E> {
+    fn new(config: Config, log: slog::Logger, store: E) -> Self {
+        YakvServer { config, log, store }
     }
 
     fn start(&mut self) -> Result<()> {
         info!(self.log, "engine: {:?}", self.config.engine);
         info!(self.log, "ip: {:?}", self.config.addr);
         let listener = TcpListener::bind(&self.config.addr)?;
-        let tcp_stream = listener.accept()?.0;
-        info!(self.log, "connection accepted");
-        self.handle_request(tcp_stream)?;
-        // for stream in listener.incoming() {
-        //     let tcp_stream = stream?;
-        //     info!(self.log, "connection accepted");
-        //     self.handle_request(tcp_stream)?;
-        // }
+        //        let tcp_stream = listener.accept()?.0;
+        //        info!(self.log, "connection accepted");
+        //        self.handle_request(tcp_stream, store)?;
+        for stream in listener.incoming() {
+            let tcp_stream = stream?;
+            info!(self.log, "connection accepted");
+            self.handle_request(tcp_stream)?;
+        }
         Ok(())
     }
 
@@ -67,7 +68,28 @@ impl YakvServer {
         let mut stream = stream;
         let message = YakvMessage::new(&mut stream, PayloadType::Command)?;
         info!(self.log, "Req: {:?}", message);
-        let response = YakvMessage::get_len_payload_bytes(Payload::Response("OK".to_string()))?;
+        let mut payload = Payload::Empty;
+
+        if let Payload::Command(cmd) = message.payload {
+            match cmd {
+                Command::Set { key, value } => {
+                    self.store.set(key, value)?;
+                }
+                Command::Get { key } => {
+                    // TODO: revisit this
+                    payload = Payload::Response(if let Some(val) = self.store.get(key)? {
+                        val
+                    } else {
+                        "Key not found".to_string()
+                    });
+                }
+                Command::Remove { key } => {
+                    self.store.remove(key)?;
+                }
+            }
+        }
+
+        let response = YakvMessage::get_len_payload_bytes(payload)?;
         stream.write_all(&response.1)?;
         stream.flush()?;
         Ok(())
@@ -100,21 +122,26 @@ fn main() -> Result<()> {
         .get_matches();
 
     let addr = matches.value_of("addr").expect("ADDR arg is required");
-    let engine = matches.value_of("engine").expect("ENGINE arg is required");
+    let engine_arg = matches.value_of("engine").expect("ENGINE arg is required");
     let config = Config {
         addr: SocketAddr::from_str(addr).expect("Address is not a valid IPV4 address."),
-        engine: Engine::from_str(engine).unwrap_or(Engine::Yakv),
+        engine: Engine::from_str(engine_arg).unwrap_or(Engine::Yakv),
     };
 
-    let existing_engines = get_existing_engines(env::current_dir()?)?;
+    let current_dir = env::current_dir()?;
+    let existing_engines = get_existing_engines(current_dir.clone())?;
     if !existing_engines.is_empty() && !existing_engines.contains(&config.engine) {
         return Err(YakvError::Any(anyhow!(
             "Engine value is different from already used engines."
         )));
     }
-    // println!("engines: {:?}", existing_engines);
+    let store = match config.engine {
+        Engine::Yakv => KvStore::open(current_dir)?,
+        Engine::Sled => KvStore::open(current_dir)?,
+    };
+
     // start server
-    let mut server = YakvServer::new(config, log);
+    let mut server = YakvServer::new(config, log, store);
     server.start()?;
 
     Ok(())

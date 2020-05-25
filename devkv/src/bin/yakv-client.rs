@@ -1,4 +1,5 @@
 use clap::{App, Arg, SubCommand};
+use slog::*;
 use std::env;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::TcpStream;
@@ -78,6 +79,13 @@ fn main() -> Result<()> {
     stream.write_all(&YakvMessage::get_len_payload_bytes(Payload::Command(cmd))?.1)?;
     stream.flush()?;
     let response = YakvMessage::new(&mut stream, PayloadType::Response)?;
-    println!("{:?}", response.payload);
+
+    let decorator = slog_term::PlainSyncDecorator::new(std::io::stderr());
+    let drain = slog_term::FullFormat::new(decorator).build().fuse();
+
+    let log = slog::Logger::root(drain, o!());
+    if let Payload::Response(value) = response.payload {
+        info!(log, "Response: {:?}", value);
+    }
     Ok(())
 }

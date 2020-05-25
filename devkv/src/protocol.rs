@@ -89,8 +89,12 @@ impl YakvMessage {
                 payload = Payload::Command(serde_json::from_slice::<Command>(&buf)?);
             }
             PayloadType::Response => {
-                let value = String::from_utf8(buf).expect("Value needs to be valid bytes");
-                payload = Payload::Response(value);
+                if length == 0 {
+                    payload = Payload::Empty;
+                } else {
+                    let value = String::from_utf8(buf).expect("Value needs to be valid bytes");
+                    payload = Payload::Response(value);
+                }
             }
             PayloadType::Empty => {
                 payload = Payload::Empty;
