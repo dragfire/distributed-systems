@@ -80,8 +80,19 @@ fn main() -> Result<()> {
     stream.flush()?;
     let response = YakvMessage::new(&mut stream, PayloadType::Response)?;
 
-    if let Payload::Response(value) = response.payload {
-        println!("{:?}", value);
+    if let Payload::Response(res) = response.payload {
+        let val = if res.is_error {
+            res.error_msg
+        } else {
+            res.result
+        };
+
+        if res.is_error {
+            eprintln!("{}", val.expect("No error message provided"));
+            exit(1);
+        } else if val.is_some() {
+            println!("{}", val.expect("Value did not return"));
+        }
     }
     Ok(())
 }

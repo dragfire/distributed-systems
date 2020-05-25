@@ -90,7 +90,11 @@ impl<E: YakvEngine> YakvServer<E> {
                     self.store.set(key, value)?;
                 }
                 Command::Get { key } => {
-                    response = Response::new(false, None, self.store.get(key)?);
+                    response = Response::new(
+                        false,
+                        None,
+                        self.store.get(key)?.or(Some("Key not found".to_string())),
+                    );
                 }
                 Command::Remove { key } => {
                     self.store.remove(key)?;

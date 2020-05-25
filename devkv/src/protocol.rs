@@ -6,10 +6,11 @@ use std::net::TcpStream;
 
 /// Used when sending response to client
 #[derive(Default, Serialize, Deserialize, Debug)]
+#[allow(missing_docs)]
 pub struct Response {
-    is_error: bool,
-    error_msg: Option<String>,
-    value: Option<String>,
+    pub is_error: bool,
+    pub error_msg: Option<String>,
+    pub result: Option<String>,
 }
 
 impl Response {
@@ -18,7 +19,7 @@ impl Response {
         Response {
             is_error,
             error_msg,
-            value,
+            result: value,
         }
     }
 }
