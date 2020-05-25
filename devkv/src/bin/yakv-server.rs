@@ -10,7 +10,9 @@ use std::iter::Iterator;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use yakv::{Command, KvStore, Payload, PayloadType, Result, YakvEngine, YakvError, YakvMessage};
+use yakv::{
+    Command, KvStore, Payload, PayloadType, Response, Result, YakvEngine, YakvError, YakvMessage,
+};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 enum Engine {
@@ -53,22 +55,34 @@ impl<E: YakvEngine> YakvServer<E> {
         info!(self.log, "engine: {:?}", self.config.engine);
         info!(self.log, "ip: {:?}", self.config.addr);
         let listener = TcpListener::bind(&self.config.addr)?;
-        //        let tcp_stream = listener.accept()?.0;
-        //        info!(self.log, "connection accepted");
-        //        self.handle_request(tcp_stream, store)?;
         for stream in listener.incoming() {
-            let tcp_stream = stream?;
+            let mut tcp_stream = stream?;
             info!(self.log, "connection accepted");
-            self.handle_request(tcp_stream)?;
+            match self.handle_request(&mut tcp_stream) {
+                Ok(res) => {
+                    self.send_response(&mut tcp_stream, res)?;
+                }
+                Err(e) => {
+                    error!(self.log, "{:?}", e);
+                    let res = Response::new(true, Some(e.to_string()), None);
+                    self.send_response(&mut tcp_stream, res)?;
+                }
+            }
         }
         Ok(())
     }
 
-    fn handle_request(&mut self, stream: TcpStream) -> Result<()> {
-        let mut stream = stream;
+    fn send_response(&mut self, stream: &mut TcpStream, res: Response) -> Result<()> {
+        let (_, bytes) = YakvMessage::get_len_payload_bytes(Payload::Response(res))?;
+        stream.write_all(&bytes)?;
+        stream.flush()?;
+        Ok(())
+    }
+
+    fn handle_request(&mut self, mut stream: &mut TcpStream) -> Result<Response> {
         let message = YakvMessage::new(&mut stream, PayloadType::Command)?;
-        info!(self.log, "Req: {:?}", message);
-        let mut payload = Payload::Empty;
+        info!(self.log, "Req: {:?}", message.payload);
+        let mut response: Response = Default::default();
 
         if let Payload::Command(cmd) = message.payload {
             match cmd {
@@ -76,12 +90,7 @@ impl<E: YakvEngine> YakvServer<E> {
                     self.store.set(key, value)?;
                 }
                 Command::Get { key } => {
-                    // TODO: revisit this
-                    payload = Payload::Response(if let Some(val) = self.store.get(key)? {
-                        val
-                    } else {
-                        "Key not found".to_string()
-                    });
+                    response = Response::new(false, None, self.store.get(key)?);
                 }
                 Command::Remove { key } => {
                     self.store.remove(key)?;
@@ -89,10 +98,7 @@ impl<E: YakvEngine> YakvServer<E> {
             }
         }
 
-        let response = YakvMessage::get_len_payload_bytes(payload)?;
-        stream.write_all(&response.1)?;
-        stream.flush()?;
-        Ok(())
+        Ok(response)
     }
 }
 

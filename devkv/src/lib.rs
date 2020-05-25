@@ -3,7 +3,7 @@
 
 pub use engine::YakvEngine;
 pub use error::{Result, YakvError};
-pub use protocol::{Payload, PayloadType, YakvMessage};
+pub use protocol::{Payload, PayloadType, Response, YakvMessage};
 pub use yakv::{Command, KvStore};
 
 mod engine;

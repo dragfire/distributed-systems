@@ -80,12 +80,8 @@ fn main() -> Result<()> {
     stream.flush()?;
     let response = YakvMessage::new(&mut stream, PayloadType::Response)?;
 
-    let decorator = slog_term::PlainSyncDecorator::new(std::io::stderr());
-    let drain = slog_term::FullFormat::new(decorator).build().fuse();
-
-    let log = slog::Logger::root(drain, o!());
     if let Payload::Response(value) = response.payload {
-        info!(log, "Response: {:?}", value);
+        println!("{:?}", value);
     }
     Ok(())
 }

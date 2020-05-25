@@ -1,8 +1,27 @@
 use crate::{Command, Result, YakvError};
 use anyhow::*;
-use std::convert::TryInto;
-use std::io::{Read, Write};
+use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::net::TcpStream;
+
+/// Used when sending response to client
+#[derive(Default, Serialize, Deserialize, Debug)]
+pub struct Response {
+    is_error: bool,
+    error_msg: Option<String>,
+    value: Option<String>,
+}
+
+impl Response {
+    /// return Response
+    pub fn new(is_error: bool, error_msg: Option<String>, value: Option<String>) -> Self {
+        Response {
+            is_error,
+            error_msg,
+            value,
+        }
+    }
+}
 
 /// Represents different Payload types.
 pub enum PayloadType {
@@ -11,18 +30,13 @@ pub enum PayloadType {
 
     /// When sending reponse back to client
     Response,
-
-    /// Empty reponse is possible
-    /// in case of Command::Set or Command::Remove
-    Empty,
 }
 
 #[allow(missing_docs)]
 #[derive(Debug)]
 pub enum Payload {
     Command(Command),
-    Response(String),
-    Empty,
+    Response(Response),
 }
 
 /// Represents networking protocol
@@ -50,16 +64,14 @@ impl YakvMessage {
     /// Prepend length: 4 bytes to payload bytes
     /// Returns (length, payload_bytes)
     pub fn get_len_payload_bytes(payload: Payload) -> Result<(u32, Vec<u8>)> {
-        let mut bytes: Vec<u8> = vec![];
+        let mut bytes: Vec<u8>;
         match payload {
             Payload::Command(cmd) => {
                 bytes = serde_json::to_vec::<Command>(&cmd)?;
             }
-            Payload::Response(val) => {
-                // do
-                bytes = val.into_bytes();
+            Payload::Response(res) => {
+                bytes = serde_json::to_vec(&res)?;
             }
-            _ => {}
         }
         let len = bytes.len() as u32;
         let mut len_bytes = len.to_be_bytes().to_vec();
@@ -83,41 +95,10 @@ impl YakvMessage {
     /// Returns payload from TcpStream and handle different payload types.
     pub fn new(stream: &mut TcpStream, ptype: PayloadType) -> Result<Self> {
         let (length, buf) = YakvMessage::get_stream_payload_bytes(stream)?;
-        let payload: Payload;
-        match ptype {
-            PayloadType::Command => {
-                payload = Payload::Command(serde_json::from_slice::<Command>(&buf)?);
-            }
-            PayloadType::Response => {
-                if length == 0 {
-                    payload = Payload::Empty;
-                } else {
-                    let value = String::from_utf8(buf).expect("Value needs to be valid bytes");
-                    payload = Payload::Response(value);
-                }
-            }
-            PayloadType::Empty => {
-                payload = Payload::Empty;
-            }
-        }
+        let payload = match ptype {
+            PayloadType::Command => Payload::Command(serde_json::from_slice::<Command>(&buf)?),
+            PayloadType::Response => Payload::Response(serde_json::from_slice(&buf)?),
+        };
         Ok(YakvMessage { length, payload })
     }
-}
-
-#[test]
-fn test_message_from_bytes() {
-    let cmd = Command::remove("key".to_string());
-    let (length, bytes) = YakvMessage::get_len_payload_bytes(Payload::Command(cmd)).unwrap();
-    let len_bytes: [u8; 4] = bytes[..4].try_into().unwrap();
-    let actual_len = u32::from_be_bytes(len_bytes);
-    assert_eq!(length, actual_len);
-
-    let res_payload = Payload::Response("OK".to_string());
-    let (length, bytes) = YakvMessage::get_len_payload_bytes(res_payload).unwrap();
-    let len_bytes = bytes[..4].try_into().expect("Valid 4 bytes required");
-    let actual_len = u32::from_be_bytes(len_bytes);
-    assert_eq!(length, actual_len);
-
-    let str_bytes: Vec<u8> = bytes[4..].try_into().unwrap();
-    assert_eq!("OK".to_string(), String::from_utf8(str_bytes).unwrap());
 }
