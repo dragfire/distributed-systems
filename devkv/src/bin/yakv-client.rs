@@ -1,10 +1,9 @@
 use clap::{App, Arg, SubCommand};
-use slog::*;
 use std::env;
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::Write;
 use std::net::TcpStream;
 use std::process::exit;
-use yakv::{Command, KvStore, Payload, PayloadType, Result, YakvEngine, YakvMessage};
+use yakv::{Command, Payload, PayloadType, Result, YakvMessage};
 
 fn main() -> Result<()> {
     let matches = App::new(env!("CARGO_PKG_NAME"))

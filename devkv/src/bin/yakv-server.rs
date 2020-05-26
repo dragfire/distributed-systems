@@ -5,10 +5,10 @@ use std::collections::HashSet;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{Write};
 use std::iter::Iterator;
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::str::FromStr;
 use yakv::{
     Command, KvStore, Payload, PayloadType, Response, Result, YakvEngine, YakvError, YakvMessage,

@@ -215,7 +215,7 @@ fn load_log(
 
                 stale_data += new_pos - pos;
             }
-            Command::Get { key } => {}
+            Command::Get { key: _ } => {}
         }
         pos = new_pos;
     }
