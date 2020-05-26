@@ -1,7 +1,6 @@
 use crate::Result;
 use crate::YakvError;
 use sled::Db;
-use std::fs;
 use std::path::PathBuf;
 
 /// Define YakvEngine trait
@@ -34,6 +33,7 @@ impl YakvSledEngine {
 impl YakvEngine for YakvSledEngine {
     fn set(&mut self, key: String, value: String) -> Result<()> {
         self.db.insert(key.as_bytes(), value.as_bytes())?;
+        self.db.flush()?;
         Ok(())
     }
 
@@ -41,13 +41,14 @@ impl YakvEngine for YakvSledEngine {
         let val = self
             .db
             .get(key.as_bytes())?
-            .map(|ivec| String::from_utf8(Vec::from(&*ivec)));
-        let res = val.and_then(|v| v.ok());
-        Ok(res)
+            .map(|ivec| String::from_utf8(Vec::from(&*ivec)))
+            .and_then(|v| v.ok());
+        Ok(val)
     }
 
     fn remove(&mut self, key: String) -> Result<()> {
         let result = self.db.remove(key.as_bytes())?;
+        self.db.flush()?;
         if result.is_none() {
             Err(YakvError::NotFoundError(key))
         } else {
