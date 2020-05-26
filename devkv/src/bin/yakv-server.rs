@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use yakv::{
     Command, KvStore, Payload, PayloadType, Response, Result, YakvEngine, YakvError, YakvMessage,
+    YakvSledEngine,
 };
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -145,14 +146,19 @@ fn main() -> Result<()> {
             "Engine value is different from already used engines."
         )));
     }
-    let store = match config.engine {
-        Engine::Yakv => KvStore::open(current_dir)?,
-        Engine::Sled => KvStore::open(current_dir)?,
-    };
 
-    // start server
-    let mut server = YakvServer::new(config, log, store);
-    server.start()?;
+    match config.engine {
+        Engine::Yakv => {
+            let store = KvStore::open(current_dir)?;
+            let mut server = YakvServer::new(config, log, store);
+            server.start()?;
+        }
+        Engine::Sled => {
+            let store = YakvSledEngine::open(current_dir)?;
+            let mut server = YakvServer::new(config, log, store);
+            server.start()?;
+        }
+    };
 
     Ok(())
 }

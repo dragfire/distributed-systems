@@ -157,7 +157,7 @@ fn cli_log_configuration() {
     let stderr_path = temp_dir.path().join("stderr");
     let mut cmd = Command::cargo_bin("yakv-server").unwrap();
     let mut child = cmd
-        .args(&["--engine", "kvs", "--addr", "127.0.0.1:4001"])
+        .args(&["--engine", "yakv", "--addr", "127.0.0.1:4001"])
         .current_dir(&temp_dir)
         .stderr(File::create(&stderr_path).unwrap())
         .spawn()
@@ -173,7 +173,7 @@ fn cli_log_configuration() {
 
 #[test]
 fn cli_wrong_engine() {
-    // sled first, kvs second
+    // sled first, yakv second
     {
         let temp_dir = TempDir::new().unwrap();
         let mut cmd = Command::cargo_bin("yakv-server").unwrap();
@@ -186,18 +186,18 @@ fn cli_wrong_engine() {
         child.kill().expect("server exited before killed");
 
         let mut cmd = Command::cargo_bin("yakv-server").unwrap();
-        cmd.args(&["--engine", "kvs", "--addr", "127.0.0.1:4003"])
+        cmd.args(&["--engine", "yakv", "--addr", "127.0.0.1:4003"])
             .current_dir(&temp_dir)
             .assert()
             .failure();
     }
 
-    // kvs first, sled second
+    // yakv first, sled second
     {
         let temp_dir = TempDir::new().unwrap();
         let mut cmd = Command::cargo_bin("yakv-server").unwrap();
         let mut child = cmd
-            .args(&["--engine", "kvs", "--addr", "127.0.0.1:4002"])
+            .args(&["--engine", "yakv", "--addr", "127.0.0.1:4002"])
             .current_dir(&temp_dir)
             .spawn()
             .unwrap();
@@ -327,8 +327,8 @@ fn cli_access_server(engine: &str, addr: &str) {
 }
 
 #[test]
-fn cli_access_server_kvs_engine() {
-    cli_access_server("kvs", "127.0.0.1:4004");
+fn cli_access_server_yakv_engine() {
+    cli_access_server("yakv", "127.0.0.1:4004");
 }
 
 #[test]

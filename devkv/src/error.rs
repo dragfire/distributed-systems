@@ -1,3 +1,4 @@
+use sled;
 use std::io;
 use thiserror::Error;
 
@@ -13,6 +14,9 @@ pub enum YakvError {
 
     /// Serde Error
     Serde(#[from] serde_json::Error),
+
+    /// Sled Error
+    Sled(#[from] sled::Error),
 
     /// Unexpected Command Error
     #[error("Unexpected command")]

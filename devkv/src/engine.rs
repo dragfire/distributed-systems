@@ -1,4 +1,7 @@
 use crate::Result;
+use crate::YakvError;
+use sled::Db;
+use std::fs;
 use std::path::PathBuf;
 
 /// Define YakvEngine trait
@@ -14,24 +17,41 @@ pub trait YakvEngine {
 }
 
 /// YakvSledEngine implements YakvEngine trait
-pub struct YakvSledEngine {}
+pub struct YakvSledEngine {
+    db: Db,
+}
 
 impl YakvSledEngine {
-    fn new(path: PathBuf) -> Result<Self> {
-        Ok(YakvSledEngine {})
+    /// Return Sled engine for the given path
+    pub fn open(path: PathBuf) -> Result<Self> {
+        let mut path = path;
+        path.push("engine_sled_data");
+        let db = sled::open(path)?;
+        Ok(YakvSledEngine { db })
     }
 }
 
 impl YakvEngine for YakvSledEngine {
     fn set(&mut self, key: String, value: String) -> Result<()> {
-        panic!();
+        self.db.insert(key.as_bytes(), value.as_bytes())?;
+        Ok(())
     }
 
     fn get(&mut self, key: String) -> Result<Option<String>> {
-        panic!();
+        let val = self
+            .db
+            .get(key.as_bytes())?
+            .map(|ivec| String::from_utf8(Vec::from(&*ivec)));
+        let res = val.and_then(|v| v.ok());
+        Ok(res)
     }
 
     fn remove(&mut self, key: String) -> Result<()> {
-        panic!();
+        let result = self.db.remove(key.as_bytes())?;
+        if result.is_none() {
+            Err(YakvError::NotFoundError(key))
+        } else {
+            Ok(())
+        }
     }
 }
