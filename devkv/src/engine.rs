@@ -1,7 +1,28 @@
 use crate::Result;
 use crate::YakvError;
 use sled::Db;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
+pub enum Engine {
+    Yakv,
+    Sled,
+}
+
+// NOTE: look into arg_enum!() macro from clap as an alternative
+impl FromStr for Engine {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, ()> {
+        match s {
+            "yakv" => Ok(Engine::Yakv),
+            "sled" => Ok(Engine::Sled),
+            _ => Err(()),
+        }
+    }
+}
 
 /// Define YakvEngine trait
 pub trait YakvEngine {
@@ -22,8 +43,8 @@ pub struct YakvSledEngine {
 
 impl YakvSledEngine {
     /// Return Sled engine for the given path
-    pub fn open(path: PathBuf) -> Result<Self> {
-        let mut path = path;
+    pub fn open(path: &Path) -> Result<Self> {
+        let mut path = PathBuf::from(path);
         path.push("engine_sled_data");
         let db = sled::open(path)?;
         Ok(YakvSledEngine { db })

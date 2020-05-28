@@ -5,34 +5,15 @@ use std::collections::HashSet;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{Write};
+use std::io::Write;
 use std::iter::Iterator;
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 use yakv::{
-    Command, KvStore, Payload, PayloadType, Response, Result, YakvEngine, YakvError, YakvMessage,
-    YakvSledEngine,
+    Command, Engine, KvStore, Payload, PayloadType, Response, Result, YakvEngine, YakvError,
+    YakvMessage, YakvSledEngine,
 };
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-enum Engine {
-    Yakv,
-    Sled,
-}
-
-// NOTE: look into arg_enum!() macro from clap as an alternative
-impl FromStr for Engine {
-    type Err = ();
-
-    fn from_str(s: &str) -> std::result::Result<Self, ()> {
-        match s {
-            "yakv" => Ok(Engine::Yakv),
-            "sled" => Ok(Engine::Sled),
-            _ => Err(()),
-        }
-    }
-}
 
 // NOTE: look into structopt
 #[derive(Debug)]
@@ -154,7 +135,7 @@ fn main() -> Result<()> {
             server.start()?;
         }
         Engine::Sled => {
-            let store = YakvSledEngine::open(current_dir)?;
+            let store = YakvSledEngine::open(current_dir.as_path())?;
             let mut server = YakvServer::new(config, log, store);
             server.start()?;
         }
