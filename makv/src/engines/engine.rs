@@ -22,7 +22,7 @@ impl FromStr for Engine {
 }
 
 /// Define MakvEngine trait
-pub trait MakvEngine {
+pub trait MakvEngine: Clone + Send + 'static {
     /// Sets the value of s string key to a string.
     fn set(&mut self, key: String, value: String) -> Result<()>;
 

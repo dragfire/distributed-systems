@@ -1,4 +1,4 @@
-use kvs::{KvStore, KvsEngine, Result};
+use makv::{KvStore, MakvEngine, Result};
 use std::sync::{Arc, Barrier};
 use std::thread;
 use tempfile::TempDir;
