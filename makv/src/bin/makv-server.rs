@@ -1,5 +1,9 @@
 use anyhow::*;
 use clap::{App, Arg};
+use makv::{
+    Command, Engine, KvStore, MakvEngine, MakvError, MakvMessage, Payload, PayloadType, Response,
+    Result, SledStore,
+};
 use slog::*;
 use std::collections::HashSet;
 use std::env;
@@ -10,10 +14,6 @@ use std::iter::Iterator;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::str::FromStr;
-use yakv::{
-    Command, Engine, KvStore, MakvEngine, MakvError, MakvMessage, Payload, PayloadType, Response,
-    Result, SledStore,
-};
 
 // NOTE: look into structopt
 #[derive(Debug)]
