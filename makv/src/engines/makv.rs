@@ -6,6 +6,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use crate::{MakvEngine, MakvError, Result};
 
@@ -29,13 +30,12 @@ const COMPACTION_THRESHOLD: u64 = 1024 * 1024;
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Clone)]
 pub struct KvStore {
     path: PathBuf,
-    current_id: u64,
-    writer: BufWriterWithPos<File>,
-    readers: HashMap<u64, BufReaderWithPos<File>>,
-    index: BTreeMap<String, CommandPos>,
-    stale_data: u64,
+    writer: Mutex<Arc<KvStoreWriter>>,
+    readers: Mutex<Arc<HashMap<u64, BufReaderWithPos<File>>>>,
+    index: Mutex<Arc<BTreeMap<String, CommandPos>>>,
 }
 
 impl KvStore {
@@ -66,11 +66,9 @@ impl KvStore {
 
         Ok(KvStore {
             path,
-            current_id,
             writer,
             readers,
             index,
-            stale_data,
         })
     }
 
@@ -115,7 +113,48 @@ impl KvStore {
 
 impl MakvEngine for KvStore {
     /// Sets the value of s string key to a string.
-    fn set(&mut self, key: String, value: String) -> Result<()> {
+    fn set(&self, key: String, value: String) -> Result<()> {
+        self.writer.lock()?.set(key, value)?;
+    }
+
+    /// Gets the string value for a given key.
+    fn get(&self, key: String) -> Result<Option<String>> {
+        // println!("{:?}", self.index);
+        if let Some(cmd_pos) = self.index.get(&key) {
+            let reader = self
+                .readers
+                .get_mut(&cmd_pos.id)
+                .expect("Cannot find reader");
+
+            reader.seek(SeekFrom::Start(cmd_pos.pos))?;
+            let cmd_reader = reader.take(cmd_pos.len);
+            if let Command::Set { value, .. } = serde_json::from_reader(cmd_reader)? {
+                Ok(Some(value))
+            } else {
+                Err(MakvError::UnexpectedCommand)
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Removes the given key.
+    fn remove(&self, key: String) -> Result<()> {
+        self.writer.lock()?.remove(key)?;
+    }
+}
+
+struct KvStoreWriter {
+    path: PathBuf,
+    current_id: u64,
+    writer: BufWriterWithPos<File>,
+    index: BTreeMap<String, CommandPos>,
+    stale_data: u64,
+}
+
+impl KvStoreWriter {
+    /// Sets the value of s string key to a string.
+    fn set(&self, key: String, value: String) -> Result<()> {
         let cmd = Command::set(key, value);
         let pos = self.writer.pos;
         serde_json::to_writer(&mut self.writer, &cmd)?;
@@ -138,29 +177,8 @@ impl MakvEngine for KvStore {
         Ok(())
     }
 
-    /// Gets the string value for a given key.
-    fn get(&mut self, key: String) -> Result<Option<String>> {
-        // println!("{:?}", self.index);
-        if let Some(cmd_pos) = self.index.get(&key) {
-            let reader = self
-                .readers
-                .get_mut(&cmd_pos.id)
-                .expect("Cannot find reader");
-
-            reader.seek(SeekFrom::Start(cmd_pos.pos))?;
-            let cmd_reader = reader.take(cmd_pos.len);
-            if let Command::Set { value, .. } = serde_json::from_reader(cmd_reader)? {
-                Ok(Some(value))
-            } else {
-                Err(MakvError::UnexpectedCommand)
-            }
-        } else {
-            Ok(None)
-        }
-    }
-
     /// Removes the given key.
-    fn remove(&mut self, key: String) -> Result<()> {
+    fn remove(&self, key: String) -> Result<()> {
         // check if key exist in index and delete if from the log file
         if self.index.contains_key(&key) {
             let cmd = Command::remove(key.to_owned());

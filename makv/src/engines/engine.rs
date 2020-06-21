@@ -24,11 +24,11 @@ impl FromStr for Engine {
 /// Define MakvEngine trait
 pub trait MakvEngine: Clone + Send + 'static {
     /// Sets the value of s string key to a string.
-    fn set(&mut self, key: String, value: String) -> Result<()>;
+    fn set(&self, key: String, value: String) -> Result<()>;
 
     /// Gets the string value for a given key.
-    fn get(&mut self, key: String) -> Result<Option<String>>;
+    fn get(&self, key: String) -> Result<Option<String>>;
 
     /// Removes the given key.
-    fn remove(&mut self, key: String) -> Result<()>;
+    fn remove(&self, key: String) -> Result<()>;
 }

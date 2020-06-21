@@ -1,14 +1,13 @@
 use crate::Result;
 
 #[allow(missing_docs)]
-pub trait ThreadPool
-where
-    Self: Sized,
-{
+pub trait ThreadPool {
     /// Creates a new thread pool, immediately spawning the specified number of threads.
     ///
     /// Returns an error if any thread fails to spawn. All previously-spawned threads are terminated.
-    fn new(threads: u32) -> Result<Self>;
+    fn new(threads: u32) -> Result<Self>
+    where
+        Self: Sized;
 
     /// Spawn a function into the threadpool.
     ///
