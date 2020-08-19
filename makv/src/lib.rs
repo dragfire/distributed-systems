@@ -1,12 +1,14 @@
 #![deny(missing_docs)]
 //! Yet another Key/Value store
 
-pub use engines::{Command, Engine, KvStore, MakvEngine, SledStore};
-pub use error::{MakvError, Result};
-pub use protocol::{MakvMessage, Payload, PayloadType, Response};
-pub use thread_pool::{NaiveThreadPool, ThreadPool};
+pub use engine::{Engine, YakvEngine};
+pub use error::{Result, YakvError};
+pub use protocol::{Payload, PayloadType, Response, YakvMessage};
+pub use thread_pool::{NaiveThreadPool, RayonThreadPool, SharedQueueThreadPool, ThreadPool};
+pub use yakv::{Command, KvStore};
 
-mod engines;
+mod engine;
 mod error;
 mod protocol;
 mod thread_pool;
+mod yakv;

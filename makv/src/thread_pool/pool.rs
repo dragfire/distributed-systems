@@ -1,4 +1,5 @@
 use crate::Result;
+use std::thread;
 
 #[allow(missing_docs)]
 pub trait ThreadPool {
@@ -16,4 +17,40 @@ pub trait ThreadPool {
     fn spawn<F>(&self, job: F)
     where
         F: FnOnce() + Send + 'static;
+}
+
+#[allow(missing_docs)]
+pub struct SharedQueueThreadPool;
+
+impl ThreadPool for SharedQueueThreadPool {
+    fn new(_threads: u32) -> Result<Self> {
+        Ok(SharedQueueThreadPool)
+    }
+
+    fn spawn<F>(&self, job: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        thread::spawn(|| {
+            job();
+        });
+    }
+}
+
+#[allow(missing_docs)]
+pub struct RayonThreadPool;
+
+impl ThreadPool for RayonThreadPool {
+    fn new(_threads: u32) -> Result<Self> {
+        Ok(Self)
+    }
+
+    fn spawn<F>(&self, job: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        thread::spawn(|| {
+            job();
+        });
+    }
 }

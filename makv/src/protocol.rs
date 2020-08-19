@@ -1,4 +1,4 @@
-use crate::{Command, MakvError, Result};
+use crate::{Command, Result, YakvError};
 use anyhow::*;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
@@ -51,7 +51,7 @@ pub enum Payload {
 ///
 /// We can find out the length of the payload from first 4 bytes i.e. [u8; 4]
 #[derive(Debug)]
-pub struct MakvMessage {
+pub struct YakvMessage {
     /// length of payload
     pub length: u32,
 
@@ -59,7 +59,7 @@ pub struct MakvMessage {
     pub payload: Payload,
 }
 
-impl MakvMessage {
+impl YakvMessage {
     /// Get length of the payload and convert payload to bytes
     ///
     /// Prepend length: 4 bytes to payload bytes
@@ -84,7 +84,7 @@ impl MakvMessage {
         let mut len_buf: [u8; 4] = [0; 4];
         let mut handle = stream.take(4);
         if handle.limit() != 4 {
-            return Err(MakvError::Any(anyhow!("Payload needs to be 4 bytes long.")));
+            return Err(YakvError::Any(anyhow!("Payload needs to be 4 bytes long.")));
         }
         handle.read_exact(&mut len_buf)?;
         let length = u32::from_be_bytes(len_buf);
@@ -95,11 +95,11 @@ impl MakvMessage {
 
     /// Returns payload from TcpStream and handle different payload types.
     pub fn new(stream: &mut TcpStream, ptype: PayloadType) -> Result<Self> {
-        let (length, buf) = MakvMessage::get_stream_payload_bytes(stream)?;
+        let (length, buf) = YakvMessage::get_stream_payload_bytes(stream)?;
         let payload = match ptype {
             PayloadType::Command => Payload::Command(serde_json::from_slice::<Command>(&buf)?),
             PayloadType::Response => Payload::Response(serde_json::from_slice(&buf)?),
         };
-        Ok(MakvMessage { length, payload })
+        Ok(YakvMessage { length, payload })
     }
 }

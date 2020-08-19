@@ -5,7 +5,7 @@ use thiserror::Error;
 /// Represent all Yakv error
 #[derive(Error, Debug)]
 #[error("...")]
-pub enum MakvError {
+pub enum YakvError {
     /// Any Error
     Any(#[from] anyhow::Error),
 
@@ -28,4 +28,4 @@ pub enum MakvError {
 }
 
 /// Result handles Result<T, YakvError>
-pub type Result<T> = anyhow::Result<T, MakvError>;
+pub type Result<T> = anyhow::Result<T, YakvError>;
