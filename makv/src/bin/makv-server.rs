@@ -1,8 +1,8 @@
 use anyhow::*;
 use clap::{App, Arg};
 use makv::{
-    Command, Engine, KvStore, MakvEngine, Payload, PayloadType, Response, Result, YakvError,
-    YakvMessage,
+    Command, Engine, KvStore, MakvEngine, NaiveThreadPool, Payload, PayloadType, Response, Result,
+    ThreadPool, YakvError, YakvMessage,
 };
 use slog::*;
 use std::collections::HashSet;
@@ -35,19 +35,22 @@ impl<E: MakvEngine> YakvServer<E> {
 
     fn start(&self) -> Result<()> {
         let listener = TcpListener::bind(&self.config.addr)?;
+        let pool = NaiveThreadPool::new(8)?;
         for stream in listener.incoming() {
             let store = self.store.clone();
-            if let Ok(tcp_stream) = stream {
-                match handle_request(&tcp_stream, store) {
-                    Ok(res) => {
-                        send_response(&tcp_stream, res)?;
-                    }
-                    Err(e) => {
-                        let res = Response::new(true, Some(e.to_string()), None);
-                        send_response(&tcp_stream, res)?;
+            pool.spawn(move || {
+                if let Ok(tcp_stream) = stream {
+                    match handle_request(&tcp_stream, store) {
+                        Ok(res) => {
+                            send_response(&tcp_stream, res).unwrap();
+                        }
+                        Err(e) => {
+                            let res = Response::new(true, Some(e.to_string()), None);
+                            send_response(&tcp_stream, res).unwrap();
+                        }
                     }
                 }
-            }
+            });
         }
         Ok(())
     }
@@ -84,6 +87,7 @@ fn handle_request<E: MakvEngine>(mut stream: &TcpStream, store: E) -> Result<Res
 
     Ok(response)
 }
+
 fn main() -> Result<()> {
     let decorator = slog_term::PlainSyncDecorator::new(std::io::stderr());
     let drain = slog_term::FullFormat::new(decorator).build().fuse();
