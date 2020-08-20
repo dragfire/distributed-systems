@@ -8,7 +8,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use crate::{Result, YakvEngine, YakvError};
+use crate::{MakvEngine, Result, YakvError};
 
 // This constant is used for invoking log compaction
 const COMPACTION_THRESHOLD: u64 = 1024 * 1024;
@@ -40,7 +40,7 @@ impl KvStore {
     }
 }
 
-impl YakvEngine for KvStore {
+impl MakvEngine for KvStore {
     /// Sets a value for a given key.
     fn set(&self, key: String, value: String) -> Result<()> {
         let mut store = self.0.lock().unwrap();

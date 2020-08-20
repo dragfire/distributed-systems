@@ -21,8 +21,8 @@ impl FromStr for Engine {
     }
 }
 
-/// Define YakvEngine trait
-pub trait YakvEngine {
+/// Define MakvEngine trait
+pub trait MakvEngine: Clone + Send + 'static {
     /// Sets the value of s string key to a string.
     fn set(&self, key: String, value: String) -> Result<()>;
 

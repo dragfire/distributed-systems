@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 //! Yet another Key/Value store
 
-pub use engine::{Engine, YakvEngine};
+pub use engine::{Engine, MakvEngine};
 pub use error::{Result, YakvError};
 pub use protocol::{Payload, PayloadType, Response, YakvMessage};
 pub use thread_pool::{NaiveThreadPool, RayonThreadPool, SharedQueueThreadPool, ThreadPool};

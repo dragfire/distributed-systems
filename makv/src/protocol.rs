@@ -80,7 +80,7 @@ impl YakvMessage {
         Ok((len, len_bytes))
     }
 
-    fn get_stream_payload_bytes(stream: &mut TcpStream) -> Result<(u32, Vec<u8>)> {
+    fn get_stream_payload_bytes(mut stream: &TcpStream) -> Result<(u32, Vec<u8>)> {
         let mut len_buf: [u8; 4] = [0; 4];
         let mut handle = stream.take(4);
         if handle.limit() != 4 {
@@ -94,7 +94,7 @@ impl YakvMessage {
     }
 
     /// Returns payload from TcpStream and handle different payload types.
-    pub fn new(stream: &mut TcpStream, ptype: PayloadType) -> Result<Self> {
+    pub fn new(stream: &TcpStream, ptype: PayloadType) -> Result<Self> {
         let (length, buf) = YakvMessage::get_stream_payload_bytes(stream)?;
         let payload = match ptype {
             PayloadType::Command => Payload::Command(serde_json::from_slice::<Command>(&buf)?),

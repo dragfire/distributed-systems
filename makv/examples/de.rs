@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Deserializer};
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Write};
-use std::path::{Path, PathBuf};
+use std::fs::OpenOptions;
+use std::io::{BufReader, BufWriter, Write};
+use std::path::PathBuf;
 
 #[derive(Serialize, Debug, Deserialize)]
 enum Command {

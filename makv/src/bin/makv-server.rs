@@ -1,7 +1,7 @@
 use anyhow::*;
 use clap::{App, Arg};
 use makv::{
-    Command, Engine, KvStore, Payload, PayloadType, Response, Result, YakvEngine, YakvError,
+    Command, Engine, KvStore, MakvEngine, Payload, PayloadType, Response, Result, YakvError,
     YakvMessage,
 };
 use slog::*;
@@ -28,66 +28,62 @@ struct YakvServer<E> {
     store: E,
 }
 
-impl<E: YakvEngine> YakvServer<E> {
+impl<E: MakvEngine> YakvServer<E> {
     fn new(config: Config, log: slog::Logger, store: E) -> Self {
         YakvServer { config, log, store }
     }
 
-    fn start(&mut self) -> Result<()> {
-        info!(self.log, "engine: {:?}", self.config.engine);
-        info!(self.log, "ip: {:?}", self.config.addr);
+    fn start(&self) -> Result<()> {
         let listener = TcpListener::bind(&self.config.addr)?;
         for stream in listener.incoming() {
-            let mut tcp_stream = stream?;
-            info!(self.log, "connection accepted");
-            match self.handle_request(&mut tcp_stream) {
-                Ok(res) => {
-                    self.send_response(&mut tcp_stream, res)?;
-                }
-                Err(e) => {
-                    error!(self.log, "{:?}", e);
-                    let res = Response::new(true, Some(e.to_string()), None);
-                    self.send_response(&mut tcp_stream, res)?;
+            let store = self.store.clone();
+            if let Ok(tcp_stream) = stream {
+                match handle_request(&tcp_stream, store) {
+                    Ok(res) => {
+                        send_response(&tcp_stream, res)?;
+                    }
+                    Err(e) => {
+                        let res = Response::new(true, Some(e.to_string()), None);
+                        send_response(&tcp_stream, res)?;
+                    }
                 }
             }
         }
         Ok(())
-    }
-
-    fn send_response(&mut self, stream: &mut TcpStream, res: Response) -> Result<()> {
-        let (_, bytes) = YakvMessage::get_len_payload_bytes(Payload::Response(res))?;
-        stream.write_all(&bytes)?;
-        stream.flush()?;
-        Ok(())
-    }
-
-    fn handle_request(&mut self, mut stream: &mut TcpStream) -> Result<Response> {
-        let message = YakvMessage::new(&mut stream, PayloadType::Command)?;
-        info!(self.log, "Req: {:?}", message.payload);
-        let mut response: Response = Default::default();
-
-        if let Payload::Command(cmd) = message.payload {
-            match cmd {
-                Command::Set { key, value } => {
-                    self.store.set(key, value)?;
-                }
-                Command::Get { key } => {
-                    response = Response::new(
-                        false,
-                        None,
-                        self.store.get(key)?.or(Some("Key not found".to_string())),
-                    );
-                }
-                Command::Remove { key } => {
-                    self.store.remove(key)?;
-                }
-            }
-        }
-
-        Ok(response)
     }
 }
 
+fn send_response(mut stream: &TcpStream, res: Response) -> Result<()> {
+    let (_, bytes) = YakvMessage::get_len_payload_bytes(Payload::Response(res))?;
+    stream.write_all(&bytes)?;
+    stream.flush()?;
+    Ok(())
+}
+
+fn handle_request<E: MakvEngine>(mut stream: &TcpStream, store: E) -> Result<Response> {
+    let message = YakvMessage::new(&mut stream, PayloadType::Command)?;
+    let mut response: Response = Default::default();
+
+    if let Payload::Command(cmd) = message.payload {
+        match cmd {
+            Command::Set { key, value } => {
+                store.set(key, value)?;
+            }
+            Command::Get { key } => {
+                response = Response::new(
+                    false,
+                    None,
+                    store.get(key)?.or(Some("Key not found".to_string())),
+                );
+            }
+            Command::Remove { key } => {
+                store.remove(key)?;
+            }
+        }
+    }
+
+    Ok(response)
+}
 fn main() -> Result<()> {
     let decorator = slog_term::PlainSyncDecorator::new(std::io::stderr());
     let drain = slog_term::FullFormat::new(decorator).build().fuse();
@@ -131,7 +127,7 @@ fn main() -> Result<()> {
     match config.engine {
         Engine::Yakv => {
             let store = KvStore::open(current_dir)?;
-            let mut server = YakvServer::new(config, log, store);
+            let server = YakvServer::new(config, log, store);
             server.start()?;
         }
         Engine::Sled => {}
