@@ -1,8 +1,8 @@
 use anyhow::*;
 use clap::{App, Arg};
 use makv::{
-    Command, Engine, KvStore, MakvEngine, NaiveThreadPool, Payload, PayloadType, Response, Result,
-    ThreadPool, YakvError, YakvMessage,
+    Command, Engine, KvStore, MakvEngine, Payload, PayloadType, Response, Result,
+    SharedQueueThreadPool, ThreadPool, YakvError, YakvMessage,
 };
 use slog::*;
 use std::collections::HashSet;
@@ -35,7 +35,7 @@ impl<E: MakvEngine> YakvServer<E> {
 
     fn start(&self) -> Result<()> {
         let listener = TcpListener::bind(&self.config.addr)?;
-        let pool = NaiveThreadPool::new(8)?;
+        let pool = SharedQueueThreadPool::new(8)?;
         for stream in listener.incoming() {
             let store = self.store.clone();
             pool.spawn(move || {

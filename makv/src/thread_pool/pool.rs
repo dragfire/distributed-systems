@@ -1,4 +1,5 @@
 use crate::Result;
+use std::sync::mpsc;
 use std::thread;
 
 #[allow(missing_docs)]
