@@ -6,8 +6,8 @@ use makv::*;
 use crossbeam_utils::sync::WaitGroup;
 
 fn spawn_counter<P: ThreadPool>(pool: P) -> Result<()> {
-    const TASK_NUM: usize = 20;
-    const ADD_COUNT: usize = 1000;
+    const TASK_NUM: usize = 5;
+    const ADD_COUNT: usize = 10;
 
     let wg = WaitGroup::new();
     let counter = Arc::new(AtomicUsize::new(0));
@@ -29,7 +29,7 @@ fn spawn_counter<P: ThreadPool>(pool: P) -> Result<()> {
 }
 
 fn spawn_panic_task<P: ThreadPool>() -> Result<()> {
-    const TASK_NUM: usize = 1000;
+    const TASK_NUM: usize = 10;
 
     let pool = P::new(4)?;
     for _ in 0..TASK_NUM {

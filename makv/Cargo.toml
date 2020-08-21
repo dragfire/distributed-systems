@@ -31,6 +31,7 @@ serde_json = "1.0"
 slog = "2.5.2"
 slog-term = "2.5.0"
 sled = "0.31.0"
+crossbeam = "0.7.3"
 
 [dev-dependencies]
 assert_cmd = "0.11"
